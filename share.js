@@ -76,9 +76,54 @@
             jsonText = new TextDecoder().decode(bytes);
         }
 
-        const payload = JSON.parse(jsonText);
+        const payload = normalizeSharePayload(JSON.parse(jsonText));
         validatePayload(payload);
         return payload;
+    }
+
+    function fromBase36(value) {
+        return parseInt(String(value || '0'), 36) || 0;
+    }
+
+    function normalizeShareMonthValue(monthValue) {
+        const normalizedMonth = String(monthValue || '');
+        if (/^\d{4}$/u.test(normalizedMonth)) {
+            return `20${normalizedMonth}`;
+        }
+        return normalizedMonth;
+    }
+
+    function normalizeSharePayload(payload) {
+        if (Array.isArray(payload)) {
+            const [version, monthValue, typeValue, generatedAt, message, totalWatchTime, attendanceDays, rankings] = payload;
+            return {
+                v: Number(version || 0),
+                m: normalizeShareMonthValue(monthValue),
+                t: Number(typeValue || 0),
+                g: fromBase36(generatedAt),
+                msg: String(message || ''),
+                tw: fromBase36(totalWatchTime),
+                ad: fromBase36(attendanceDays),
+                rs: Array.isArray(rankings)
+                    ? rankings.map(entry => [
+                        String(entry?.[0] || ''),
+                        fromBase36(entry?.[1]),
+                        String(entry?.[2] || ''),
+                    ])
+                    : [],
+            };
+        }
+
+        return {
+            v: Number(payload?.v || 0),
+            m: normalizeShareMonthValue(payload?.m),
+            t: Number(payload?.t || 0),
+            g: Number(payload?.g || 0),
+            msg: String(payload?.msg || ''),
+            tw: Number(payload?.tw || 0),
+            ad: Number(payload?.ad || 0),
+            rs: Array.isArray(payload?.rs) ? payload.rs : [],
+        };
     }
 
     function validatePayload(payload) {
