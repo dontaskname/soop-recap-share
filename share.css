@@ -2246,6 +2246,18 @@ body {
     box-sizing: border-box;
 }
 
+.share-header-meta .badge-live,
+.share-header-meta .badge-vod,
+.share-header-meta .badge-all {
+    border-color: rgba(148, 163, 184, 0.45);
+}
+
+.light-theme .share-header-meta .badge-live,
+.light-theme .share-header-meta .badge-vod,
+.light-theme .share-header-meta .badge-all {
+    border-color: rgba(100, 116, 139, 0.32);
+}
+
 #share-title {
     margin: 0;
     font-size: 22px;
