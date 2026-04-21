@@ -2235,16 +2235,33 @@ body {
     flex-wrap: wrap;
     gap: 10px;
     flex: 1 1 auto;
+    justify-content: flex-end;
 }
 
 #share-title {
     margin: 0;
-    flex: 0 0 auto;
-    font-size: 24px;
+    flex: 0 1 auto;
+    order: -1;
+    display: inline-flex;
+    align-items: center;
+    min-height: 42px;
+    padding: 9px 16px;
+    border-radius: 14px;
+    font-size: 20px;
     font-weight: 800;
     letter-spacing: -0.03em;
-    text-align: right;
+    text-align: left;
     white-space: nowrap;
+    color: var(--recap-text-primary);
+    background: linear-gradient(135deg, rgba(255, 154, 158, 0.18) 0%, rgba(82, 172, 230, 0.2) 100%);
+    border: 1px solid var(--recap-border-soft);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.08);
+}
+
+.light-theme #share-title {
+    background: linear-gradient(135deg, #ffe2e2 0%, #deefff 100%);
+    border-color: rgba(148, 163, 184, 0.45);
+    box-shadow: 0 10px 20px rgba(100, 116, 139, 0.12);
 }
 
 .share-header-chip {
@@ -2443,6 +2460,7 @@ body {
 
     .share-header-meta {
         gap: 8px;
+        justify-content: flex-start;
     }
 
     .share-header-chip {
@@ -2452,7 +2470,7 @@ body {
     }
 
     #share-title {
-        font-size: 20px;
+        font-size: 18px;
         text-align: left;
         white-space: normal;
     }
