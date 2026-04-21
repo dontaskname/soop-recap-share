@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOOP Recap Share</title>
+    <link rel="stylesheet" href="share.css">
+</head>
+
+<body class="light-theme">
+    <div id="recap-container" class="share-recap-container">
+        <div class="recap-modal-header">
+            <div class="share-header-copy">
+                <h1 id="share-title">월별 방송 데이터 리캡</h1>
+                <p id="share-header-meta" class="share-header-meta">공유 타입 · 공유 시각</p>
+            </div>
+            <div class="recap-modal-header-buttons">
+                <button id="share-theme-toggle" type="button" aria-pressed="false">다크모드</button>
+            </div>
+        </div>
+
+        <div class="recap-modal-body">
+            <div id="share-error" class="share-error" hidden>
+                <h2>공유 데이터를 불러오지 못했습니다</h2>
+                <p id="share-error-message">링크 형식이 올바른지 다시 확인해주세요.</p>
+            </div>
+
+            <div id="share-content" hidden>
+                <div class="share-proof-banner">
+                    <span class="share-proof-label">인증 메시지</span>
+                    <p id="share-proof-message-display" class="share-proof-message-display">-</p>
+                </div>
+
+                <div class="key-stats-grid share-key-stats-grid">
+                    <article class="stat-card time">
+                        <div class="label">총 시청시간</div>
+                        <div class="value" id="summary-total-time">-</div>
+                    </article>
+                    <article class="stat-card days">
+                        <div class="label">출석일</div>
+                        <div class="value" id="summary-attendance">-</div>
+                        </article>
+                    </div>
+
+                <section class="recap-section expanded">
+                    <div class="recap-section-header">
+                        <div class="recap-section-title">채널 순위 TOP 10</div>
+                    </div>
+                    <div class="recap-section-body share-section-body-visible">
+                        <div id="ranking-list" class="rank-list share-rank-list"></div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div class="recap-footer">
+            <span>SOOP Recap Share</span>
+            <span class="separator">|</span>
+            <span id="share-footer-month">-</span>
+        </div>
+    </div>
+
+    <script src="share.js" defer></script>
+</body>
+
+</html>
