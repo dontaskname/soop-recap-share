@@ -1,10 +1,8 @@
 (function () {
     'use strict';
 
-    const SEARCH_API_URL = 'https://sch.sooplive.com/api.php';
     const THEME_STORAGE_KEY = 'soop-recap-share-theme';
     const TYPE_LABELS = ['LIVE', 'VOD', 'LIVE + VOD'];
-    const avatarUrlCache = new Map();
 
     function isLightThemeActive() {
         return document.body.classList.contains('light-theme');
@@ -150,26 +148,18 @@
         return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
     }
 
-    function getPreferredProfileImageUrl(originalUrl) {
-        const sourceUrl = String(originalUrl || '').trim();
-        if (!sourceUrl) return '';
+    function getPreferredProfileImageUrl(userId) {
+        const normalizedUserId = String(userId || '').trim();
+        if (!normalizedUserId) return '';
+        const prefix = normalizedUserId.slice(0, 2);
+        return `https://stimg.sooplive.com/LOGO/${prefix}/${normalizedUserId}/m/${normalizedUserId}.webp`;
+    }
 
-        try {
-            const url = new URL(sourceUrl);
-            const pathSegments = url.pathname.split('/').filter(Boolean);
-            const isSoopProfileImage = url.hostname === 'profile.img.sooplive.com' || url.hostname === 'stimg.sooplive.com';
-            const hasLogoPath = pathSegments.length >= 4 && pathSegments[0].toUpperCase() === 'LOGO';
-
-            if (isSoopProfileImage && hasLogoPath) {
-                const prefix = pathSegments[1];
-                const userId = pathSegments[2];
-                return `https://stimg.sooplive.com/LOGO/${prefix}/${userId}/m/${userId}.webp`;
-            }
-        } catch {
-            // Fall through to the original URL when parsing fails.
-        }
-
-        return sourceUrl;
+    function getFallbackProfileImageUrl(userId) {
+        const normalizedUserId = String(userId || '').trim();
+        if (!normalizedUserId) return '';
+        const prefix = normalizedUserId.slice(0, 2);
+        return `https://profile.img.sooplive.com/LOGO/${prefix}/${normalizedUserId}/${normalizedUserId}.jpg`;
     }
 
     function handleAvatarLoadError(event) {
@@ -191,57 +181,13 @@
             rank: index + 1,
             name: String(entry?.[0] || '알 수 없음'),
             seconds: Math.max(0, Number(entry?.[1] || 0)),
+            userId: String(entry?.[2] || '').trim(),
         }));
     }
 
     function formatSharePercent(seconds, totalSeconds) {
         if (!totalSeconds) return '0.0%';
         return `${((seconds / totalSeconds) * 100).toFixed(1)}%`;
-    }
-
-    async function getStreamerProfileUrl(originalNick) {
-        if (avatarUrlCache.has(originalNick)) {
-            return avatarUrlCache.get(originalNick);
-        }
-
-        const search = async (term) => {
-            const response = await fetch(`${SEARCH_API_URL}?m=searchHistory&service=list&d=${encodeURIComponent(term)}`);
-            if (!response.ok) return null;
-            const data = await response.json();
-            return data?.suggest_bj?.find(item => item.user_nick === originalNick)?.station_logo || null;
-        };
-
-        try {
-            let logo = await search(originalNick);
-            if (!logo) {
-                const sanitized = originalNick.replace(/[^\p{L}\p{N}\s]/gu, '');
-                if (sanitized && sanitized !== originalNick) {
-                    logo = await search(sanitized);
-                }
-            }
-            avatarUrlCache.set(originalNick, logo);
-            return logo;
-        } catch {
-            avatarUrlCache.set(originalNick, null);
-            return null;
-        }
-    }
-
-    async function hydrateAvatars() {
-        const avatarElements = Array.from(document.querySelectorAll('[data-streamer-name]'));
-        await Promise.all(avatarElements.map(async element => {
-            const name = element.dataset.streamerName;
-            const profileUrl = await getStreamerProfileUrl(name);
-            if (profileUrl) {
-                const preferredProfileUrl = getPreferredProfileImageUrl(profileUrl);
-                if (preferredProfileUrl !== profileUrl) {
-                    element.dataset.fallbackSrc = profileUrl;
-                } else {
-                    element.removeAttribute('data-fallback-src');
-                }
-                element.src = preferredProfileUrl;
-            }
-        }));
     }
 
     function renderPayload(payload) {
@@ -265,7 +211,7 @@
                 <div class="rank-item-bar" style="width: ${formatSharePercent(item.seconds, totalSeconds)};"></div>
                 <div class="rank-item-content">
                     <div class="rank-item-number">${item.rank}</div>
-                    <img class="rank-item-avatar" data-streamer-name="${escapeHtml(item.name)}" src="${createPlaceholderAvatar(item.name)}" alt="${escapeHtml(item.name)}">
+                    <img class="rank-item-avatar" data-streamer-name="${escapeHtml(item.name)}" data-user-id="${escapeHtml(item.userId)}" src="${item.userId ? getPreferredProfileImageUrl(item.userId) : createPlaceholderAvatar(item.name)}" alt="${escapeHtml(item.name)}">
                     <div class="rank-item-name">${escapeHtml(item.name)}</div>
                     <div class="rank-item-stats">
                         <div class="rank-item-time">${formatSecondsToHM(item.seconds)}</div>
@@ -277,6 +223,10 @@
 
         document.getElementById('share-content').hidden = false;
         document.querySelectorAll('.rank-item-avatar').forEach(image => {
+            const userId = image.dataset.userId || '';
+            if (userId) {
+                image.dataset.fallbackSrc = getFallbackProfileImageUrl(userId);
+            }
             image.addEventListener('error', handleAvatarLoadError);
         });
     }
@@ -294,7 +244,6 @@
         try {
             const payload = await decodeSharePayloadFromHash();
             renderPayload(payload);
-            hydrateAvatars();
         } catch (error) {
             showError(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
         }
