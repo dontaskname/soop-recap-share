@@ -150,6 +150,40 @@
         return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
     }
 
+    function getPreferredProfileImageUrl(originalUrl) {
+        const sourceUrl = String(originalUrl || '').trim();
+        if (!sourceUrl) return '';
+
+        try {
+            const url = new URL(sourceUrl);
+            const isSoopProfileImage = url.hostname === 'profile.img.sooplive.com';
+            const hasConvertibleExtension = /\.(?:jpe?g|png)$/iu.test(url.pathname);
+
+            if (isSoopProfileImage && hasConvertibleExtension) {
+                url.pathname = url.pathname.replace(/\.(?:jpe?g|png)$/iu, '.webp');
+                return url.toString();
+            }
+        } catch {
+            // Fall through to the original URL when parsing fails.
+        }
+
+        return sourceUrl;
+    }
+
+    function handleAvatarLoadError(event) {
+        const image = event.currentTarget;
+        if (!(image instanceof HTMLImageElement)) return;
+
+        const fallbackSrc = image.dataset.fallbackSrc || '';
+        if (fallbackSrc && image.src !== fallbackSrc) {
+            image.src = fallbackSrc;
+            image.removeAttribute('data-fallback-src');
+            return;
+        }
+
+        image.src = createPlaceholderAvatar(image.dataset.streamerName || '?');
+    }
+
     function buildRankings(payload) {
         return payload.rs.slice(0, 10).map((entry, index) => ({
             rank: index + 1,
@@ -197,7 +231,13 @@
             const name = element.dataset.streamerName;
             const profileUrl = await getStreamerProfileUrl(name);
             if (profileUrl) {
-                element.src = profileUrl;
+                const preferredProfileUrl = getPreferredProfileImageUrl(profileUrl);
+                if (preferredProfileUrl !== profileUrl) {
+                    element.dataset.fallbackSrc = profileUrl;
+                } else {
+                    element.removeAttribute('data-fallback-src');
+                }
+                element.src = preferredProfileUrl;
             }
         }));
     }
@@ -234,6 +274,9 @@
         `).join('');
 
         document.getElementById('share-content').hidden = false;
+        document.querySelectorAll('.rank-item-avatar').forEach(image => {
+            image.addEventListener('error', handleAvatarLoadError);
+        });
     }
 
     function showError(message) {
