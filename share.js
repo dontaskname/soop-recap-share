@@ -150,6 +150,13 @@
         return TYPE_LABELS[Number(typeValue)] || TYPE_LABELS[0];
     }
 
+    function getTypeBadgeClass(typeValue) {
+        const typeNumber = Number(typeValue);
+        if (typeNumber === 0) return 'badge-base badge-live';
+        if (typeNumber === 1) return 'badge-base badge-vod';
+        return 'badge-base badge-all';
+    }
+
     function formatGeneratedAt(timestampSeconds) {
         if (!timestampSeconds) return '-';
         const date = new Date(Number(timestampSeconds) * 1000);
@@ -235,8 +242,12 @@
         const generatedAtLabel = formatGeneratedAt(payload.g);
 
         document.getElementById('share-title').textContent = `${monthLabel} 시청 요약`;
-        document.getElementById('share-header-type').textContent = typeLabel;
-        document.getElementById('share-header-time').textContent = `공유 시각 ${generatedAtLabel}`;
+        const shareHeaderType = document.getElementById('share-header-type');
+        const shareHeaderTime = document.getElementById('share-header-time');
+        shareHeaderType.textContent = typeLabel;
+        shareHeaderType.className = getTypeBadgeClass(payload.t);
+        shareHeaderTime.textContent = `공유 시각 ${generatedAtLabel}`;
+        shareHeaderTime.className = 'badge-base badge-complete';
         document.getElementById('share-proof-message-display').textContent = payload.msg;
         document.getElementById('summary-total-time').textContent = formatSecondsToHM(totalSeconds);
         document.getElementById('summary-attendance').innerHTML = `${attendanceValue}<span class="unit">일</span>`;
