@@ -2233,9 +2233,17 @@ body {
 .share-header-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 5px;
     align-items: center;
     flex: 1 1 auto;
+}
+
+.share-header-meta .badge-base {
+    min-height: 30px;
+    padding: 5px 11px;
+    font-size: 12px;
+    line-height: 1.2;
+    box-sizing: border-box;
 }
 
 #share-title {
