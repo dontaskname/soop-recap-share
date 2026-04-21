@@ -248,7 +248,6 @@
         document.getElementById('share-proof-message-display').textContent = payload.msg;
         document.getElementById('summary-total-time').textContent = formatSecondsToHM(totalSeconds);
         document.getElementById('summary-attendance').innerHTML = `${attendanceValue}<span class="unit">일</span>`;
-        document.getElementById('share-footer-month').textContent = monthLabel;
 
         const rankingList = document.getElementById('ranking-list');
         rankingList.innerHTML = rankings.map(item => `
