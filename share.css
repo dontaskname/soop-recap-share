@@ -2219,15 +2219,51 @@ body {
 .share-header-copy {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 10px;
     min-width: 0;
 }
 
 .share-header-meta {
-    margin: 0;
-    color: var(--recap-text-secondary);
-    font-size: 14px;
-    line-height: 1.5;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.share-header-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--recap-border-soft);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+}
+
+.share-header-chip-type {
+    color: #ffffff;
+    background: linear-gradient(135deg, var(--recap-accent), #2980b9);
+    border-color: transparent;
+}
+
+.share-header-chip-time {
+    color: var(--recap-text-primary);
+    background: var(--recap-bg-glass);
+    border-color: var(--recap-border);
+}
+
+.light-theme .share-header-chip-type {
+    background: linear-gradient(135deg, #2f86c9, #1f6fb2);
+}
+
+.light-theme .share-header-chip-time {
+    background: rgba(255, 255, 255, 0.82);
+    color: #334155;
+    border-color: rgba(148, 163, 184, 0.5);
+    box-shadow: 0 10px 20px rgba(100, 116, 139, 0.14);
 }
 
 .share-section-body-visible {
@@ -2382,6 +2418,12 @@ body {
     }
 
     .share-header-meta {
-        font-size: 13px;
+        gap: 8px;
+    }
+
+    .share-header-chip {
+        width: 100%;
+        justify-content: center;
+        font-size: 12px;
     }
 }

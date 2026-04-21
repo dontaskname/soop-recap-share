@@ -235,7 +235,8 @@
         const generatedAtLabel = formatGeneratedAt(payload.g);
 
         document.getElementById('share-title').textContent = `${monthLabel} 시청 요약`;
-        document.getElementById('share-header-meta').textContent = `${typeLabel} · 공유 시각 ${generatedAtLabel}`;
+        document.getElementById('share-header-type').textContent = typeLabel;
+        document.getElementById('share-header-time').textContent = `공유 시각 ${generatedAtLabel}`;
         document.getElementById('share-proof-message-display').textContent = payload.msg;
         document.getElementById('summary-total-time').textContent = formatSecondsToHM(totalSeconds);
         document.getElementById('summary-attendance').innerHTML = `${attendanceValue}<span class="unit">일</span>`;
