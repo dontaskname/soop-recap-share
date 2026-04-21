@@ -156,12 +156,14 @@
 
         try {
             const url = new URL(sourceUrl);
-            const isSoopProfileImage = url.hostname === 'profile.img.sooplive.com';
-            const hasConvertibleExtension = /\.(?:jpe?g|png)$/iu.test(url.pathname);
+            const pathSegments = url.pathname.split('/').filter(Boolean);
+            const isSoopProfileImage = url.hostname === 'profile.img.sooplive.com' || url.hostname === 'stimg.sooplive.com';
+            const hasLogoPath = pathSegments.length >= 4 && pathSegments[0].toUpperCase() === 'LOGO';
 
-            if (isSoopProfileImage && hasConvertibleExtension) {
-                url.pathname = url.pathname.replace(/\.(?:jpe?g|png)$/iu, '.webp');
-                return url.toString();
+            if (isSoopProfileImage && hasLogoPath) {
+                const prefix = pathSegments[1];
+                const userId = pathSegments[2];
+                return `https://stimg.sooplive.com/LOGO/${prefix}/${userId}/m/${userId}.webp`;
             }
         } catch {
             // Fall through to the original URL when parsing fails.
