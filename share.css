@@ -2243,8 +2243,8 @@ body {
     font-size: 22px;
     font-weight: 800;
     letter-spacing: -0.02em;
-    text-align: right;
-    flex: 0 0 auto;
+    text-align: left;
+    flex: 0 1 auto;
     white-space: nowrap;
 }
 
