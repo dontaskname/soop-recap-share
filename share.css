@@ -2218,8 +2218,15 @@ body {
 
 .share-header-copy {
     display: flex;
-    flex-direction: column;
-    gap: 10px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.share-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
     min-width: 0;
 }
 
@@ -2227,6 +2234,17 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+    flex: 1 1 auto;
+}
+
+#share-title {
+    margin: 0;
+    flex: 0 0 auto;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-align: right;
+    white-space: nowrap;
 }
 
 .share-header-chip {
@@ -2417,6 +2435,12 @@ body {
         align-items: flex-start;
     }
 
+    .share-header-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
     .share-header-meta {
         gap: 8px;
     }
@@ -2425,5 +2449,11 @@ body {
         width: 100%;
         justify-content: center;
         font-size: 12px;
+    }
+
+    #share-title {
+        font-size: 20px;
+        text-align: left;
+        white-space: normal;
     }
 }
