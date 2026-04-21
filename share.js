@@ -57,9 +57,9 @@
 
     async function decodeSharePayloadFromHash() {
         const rawHash = window.location.hash.replace(/^#/, '');
-        const match = rawHash.match(/^v1\.(g|j)\.(.+)$/u);
+        const match = rawHash.match(/^v2\.(g|j)\.(.+)$/u);
         if (!match) {
-            throw new Error('지원하지 않는 공유 링크 형식입니다.');
+            throw new Error('지원하지 않는 공유 링크 형식입니다. 새로 생성한 공유 링크를 사용해주세요.');
         }
 
         const [, mode, encoded] = match;
@@ -114,20 +114,11 @@
             };
         }
 
-        return {
-            v: Number(payload?.v || 0),
-            m: normalizeShareMonthValue(payload?.m),
-            t: Number(payload?.t || 0),
-            g: Number(payload?.g || 0),
-            msg: String(payload?.msg || ''),
-            tw: Number(payload?.tw || 0),
-            ad: Number(payload?.ad || 0),
-            rs: Array.isArray(payload?.rs) ? payload.rs : [],
-        };
+        throw new Error('구버전 공유 데이터입니다. 새로 생성한 공유 링크를 사용해주세요.');
     }
 
     function validatePayload(payload) {
-        if (!payload || payload.v !== 1) {
+        if (!payload || payload.v !== 2) {
             throw new Error('지원하지 않는 payload 버전입니다.');
         }
         if (!Array.isArray(payload.rs)) {
