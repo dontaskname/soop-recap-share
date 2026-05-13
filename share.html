@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOOP Recap Share</title>
+    <link rel="stylesheet" href="share.css?v=receipt-weight-20260513">
+</head>
+
+<body class="light-theme">
+        <div id="recap-container" class="share-recap-container">
+        <div class="recap-modal-header">
+            <div class="share-header-copy">
+                <div class="share-header-row">
+                    <h1 id="share-title">월별 방송 데이터 리캡</h1>
+                    <div class="share-header-meta" aria-label="공유 메타 정보">
+                        <span id="share-header-type" class="badge-base badge-all">공유 타입</span>
+                        <span id="share-header-time" class="badge-base badge-complete">공유 시각</span>
+                    </div>
+                </div>
+            </div>
+            <div class="recap-modal-header-buttons">
+                <button id="share-receipt-button" type="button" hidden>영수증</button>
+                <button id="share-guide-button" type="button">이용 안내</button>
+                <button id="share-theme-toggle" type="button" aria-pressed="false">다크모드</button>
+            </div>
+        </div>
+
+        <div class="recap-modal-body">
+            <div id="share-error" class="share-error" hidden>
+                <h2>공유 데이터를 불러오지 못했습니다</h2>
+                <p id="share-error-message">링크 형식이 올바른지 다시 확인해주세요.</p>
+            </div>
+
+            <div id="share-start-guide" class="share-start-guide" hidden>
+                <div class="share-start-copy">
+                    <span class="share-start-eyebrow">SOOP Recap Share</span>
+                    <h2>공유 링크를 열거나 새로 만들 수 있습니다</h2>
+                    <p>공유받은 링크는 그대로 열면 리캡이 표시됩니다. 새 공유 링크는 PC Chrome 확장프로그램, iPhone Safari 단축어, Mobile Chrome 북마클릿으로 만들 수 있습니다.</p>
+                </div>
+
+                <div class="share-start-actions">
+                    <a class="share-start-primary" href="https://chromewebstore.google.com/detail/soop-%EC%9B%94%EB%B3%84-%EB%A6%AC%EC%BA%A1/pncpjgfglndfmeamgbfjkdabogaikmio" target="_blank" rel="noreferrer noopener">PC Chrome 확장 설치</a>
+                    <a id="ios-shortcut-install-link" class="share-start-secondary" href="#" target="_blank" rel="noreferrer noopener" aria-disabled="true">iOS 단축어 준비 중</a>
+                </div>
+
+                <div class="share-start-paths">
+                    <section>
+                        <h3>PC Chrome</h3>
+                        <ol>
+                            <li>확장프로그램을 설치합니다.</li>
+                            <li>SOOP에 로그인한 뒤 월별 리캡을 엽니다.</li>
+                            <li>공유 버튼에서 메시지를 입력하고 링크를 생성합니다.</li>
+                        </ol>
+                    </section>
+                    <section>
+                        <h3>iPhone Safari</h3>
+                        <ol>
+                            <li>단축어를 설치합니다.</li>
+                            <li>Safari에서 SOOP에 로그인합니다.</li>
+                            <li>Safari 공유 버튼에서 단축어를 실행합니다.</li>
+                        </ol>
+                    </section>
+                    <section>
+                        <h3>Mobile Chrome</h3>
+                        <ol>
+                            <li>아래 코드를 북마크 URL로 저장합니다.</li>
+                            <li>URL 맨 앞에 <code>javascript:</code>가 붙어있는지 확인합니다.</li>
+                            <li>SOOP에 로그인한 뒤 주소창에서 북마크 이름을 검색하여 실행합니다.</li>
+                        </ol>
+                        <div class="share-start-bookmarklet-wrap">
+                            <button id="android-bookmarklet-copy-button" class="share-start-copy-button" type="button">복사</button>
+                            <code id="android-bookmarklet-code" class="share-start-bookmarklet">javascript:(async()=&gt;{try{const u='https://dontaskname.github.io/soop-recap-share/ios-shortcut.js?t='+Date.now();const c=await fetch(u,{cache:'no-store'}).then(r=&gt;{if(!r.ok)throw new Error('스크립트를 불러오지 못했습니다.');return r.text();});const run=new Function('shortcutInput',c);await run(null);}catch(e){alert(e&amp;&amp;e.message?e.message:String(e));}})();</code>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <div id="share-content" hidden>
+                <div class="share-proof-banner">
+                    <span class="share-proof-label">인증 메시지</span>
+                    <p id="share-proof-message-display" class="share-proof-message-display">-</p>
+                </div>
+
+                <div class="key-stats-grid share-key-stats-grid">
+                    <article class="stat-card time">
+                        <div class="label">총 시청시간</div>
+                        <div class="value" id="summary-total-time">-</div>
+                    </article>
+                    <article class="stat-card days">
+                        <div class="label">출석일</div>
+                        <div class="value" id="summary-attendance">-</div>
+                        </article>
+                    </div>
+
+                <section class="recap-section expanded">
+                    <div class="recap-section-header">
+                        <div class="recap-section-title">채널 순위 TOP 10</div>
+                    </div>
+                    <div class="recap-section-body share-section-body-visible">
+                        <div id="ranking-list" class="rank-list share-rank-list"></div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div class="recap-footer">
+            <span>SOOP 월별 리캡 공유 페이지</span>
+            <span class="separator">|</span>
+            <a href="https://chromewebstore.google.com/detail/soop-%EC%9B%94%EB%B3%84-%EB%A6%AC%EC%BA%A1/pncpjgfglndfmeamgbfjkdabogaikmio" target="_blank" rel="noreferrer noopener">Chrome Web Store</a>
+        </div>
+    </div>
+
+    <script src="share.js?v=receipt-weight-20260513" defer></script>
+</body>
+
+</html>
