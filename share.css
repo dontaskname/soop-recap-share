@@ -2640,7 +2640,7 @@ textarea {
 }
 
 .receipt-image {
-    width: min(380px, 100%);
+    width: min(340px, 100%);
     height: auto;
     display: block;
     border-radius: 2px;
@@ -3029,7 +3029,7 @@ textarea {
     }
 
     .receipt-image {
-        width: min(360px, 100%);
+        width: min(340px, 100%);
     }
 }
 
