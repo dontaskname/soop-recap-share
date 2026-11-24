@@ -101,24 +101,37 @@ input:focus-visible {
     outline-offset: 2px;
 }
 
+:is(.recap-modal-header, .share-start-guide) {
+    --recap-ui-blue: #2669ac;
+    --recap-ui-link: #88bdf2;
+    --recap-ui-hover: color-mix(in srgb, var(--recap-ui-blue) 18%, var(--recap-hover));
+}
+
+.light-theme :is(.recap-modal-header, .share-start-guide) {
+    --recap-ui-link: var(--recap-ui-blue);
+}
+
 .recap-modal-header {
-    padding: 15px 25px;
+    padding: 20px 30px;
     border-bottom: 1px solid var(--recap-border);
     background-color: var(--recap-bg-header);
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     flex-shrink: 0;
+    gap: 12px 20px;
 }
 
 .recap-modal-header h1 {
     margin: 0;
     font-size: 20px;
-    color: var(--recap-accent);
+    color: var(--recap-ui-link);
 }
 
 .recap-modal-header-buttons {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 10px;
 }
@@ -137,19 +150,34 @@ input:focus-visible {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    height: auto;
+    gap: 5px;
+    min-height: 32px;
+    white-space: nowrap;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .recap-modal-header-buttons button:hover {
-    background-color: var(--recap-hover);
-    border-color: var(--recap-accent);
-    color: var(--recap-accent);
+    background-color: var(--recap-ui-hover);
+    border-color: var(--recap-ui-link);
     box-shadow: 0 2px 4px var(--recap-shadow);
 }
 
 .recap-modal-header-buttons button:active {
     transform: scale(0.98);
+}
+
+.recap-modal-header-buttons button[hidden],
+.share-header-summary[hidden],
+.light-theme .share-theme-sun,
+body:not(.light-theme) .share-theme-moon {
+    display: none;
+}
+
+.recap-modal-header-buttons button:focus-visible,
+.share-start-action:focus-visible,
+.share-start-bookmarklet-details summary:focus-visible {
+    outline: 2px solid var(--recap-ui-link);
+    outline-offset: 2px;
 }
 
 #recap-import-input {
@@ -1955,70 +1983,6 @@ body>canvas {
     background-color: #ff6b6b;
 }
 
-/* =================================================================
-   ✨ Premium Badges for Backup Manager
-   ================================================================= */
-.badge-base {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-size: 10.5px;
-    font-weight: 500;
-    text-transform: uppercase;
-    color: var(--recap-text-secondary);
-    background-color: var(--recap-hover);
-    border: 1px solid var(--recap-border-soft);
-    white-space: nowrap;
-    line-height: 1.3;
-    transition: all 0.2s ease;
-}
-
-/* Type Badges - Neutral/Restrained */
-.badge-live,
-.badge-vod,
-.badge-all {
-    color: #9ca3af;
-}
-
-.light-theme .badge-live,
-.light-theme .badge-vod,
-.light-theme .badge-all {
-    color: #5c6370;
-}
-
-/* Status Badges - Soft Pastel */
-.badge-complete {
-    background-color: rgba(52, 211, 153, 0.15);
-    border-color: rgba(52, 211, 153, 0.3);
-    color: #34d399;
-    margin-left: 8px;
-    text-transform: none;
-}
-
-.light-theme .badge-complete {
-    color: #059669;
-    background-color: rgba(5, 150, 105, 0.1);
-    border-color: rgba(5, 150, 105, 0.2);
-    font-weight: 500;
-}
-
-.badge-incomplete {
-    background-color: rgba(251, 191, 36, 0.15);
-    border-color: rgba(251, 191, 36, 0.3);
-    color: #fbbf24;
-    margin-left: 8px;
-    text-transform: none;
-}
-
-.light-theme .badge-incomplete {
-    color: #d97706;
-    background-color: rgba(217, 119, 6, 0.1);
-    border-color: rgba(217, 119, 6, 0.2);
-    font-weight: 500;
-}
-
 /* 스크린샷 옵션 버튼 */
 .screenshot-option-btn {
     display: flex;
@@ -2192,14 +2156,17 @@ body>canvas {
 }
 
 body {
+    --share-page-padding: 20px;
     background-color: var(--recap-bg-body);
     color: var(--recap-text-primary);
     margin: 0;
-    padding: 20px;
+    padding: var(--share-page-padding);
+    box-sizing: border-box;
     font-family: var(--recap-font-sans);
     display: flex;
     justify-content: center;
     min-height: 100vh;
+    min-height: 100dvh;
 }
 
 button,
@@ -2219,12 +2186,8 @@ textarea {
     flex-direction: column;
     overflow: hidden;
     height: fit-content;
-    min-height: 90vh;
-}
-
-.recap-modal-header {
-    padding: 20px 30px;
-    background-color: var(--recap-bg-header);
+    min-height: min(90vh, 100vh - 2 * var(--share-page-padding));
+    min-height: min(90dvh, 100dvh - 2 * var(--share-page-padding));
 }
 
 .recap-modal-body {
@@ -2233,56 +2196,29 @@ textarea {
     background-color: var(--recap-bg-panel);
 }
 
-.share-header-copy {
-    display: flex;
+.share-header-summary {
+    display: grid;
+    flex: 1 0 100%;
+    gap: 4px;
     min-width: 0;
-    flex: 1 1 auto;
-}
-
-.share-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    min-width: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--recap-border-soft);
 }
 
 .share-header-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    align-items: center;
-    flex: 1 1 auto;
-}
-
-.share-header-meta .badge-base {
-    min-height: 30px;
-    padding: 5px 11px;
-    font-size: 12px;
-    line-height: 1.2;
-    box-sizing: border-box;
-}
-
-.share-header-meta .badge-live,
-.share-header-meta .badge-vod,
-.share-header-meta .badge-all {
-    border-color: rgba(148, 163, 184, 0.45);
-}
-
-.light-theme .share-header-meta .badge-live,
-.light-theme .share-header-meta .badge-vod,
-.light-theme .share-header-meta .badge-all {
-    border-color: rgba(100, 116, 139, 0.32);
+    margin: 0;
+    color: var(--recap-text-secondary);
+    font-size: 13px;
+    line-height: 1.45;
 }
 
 #share-title {
     margin: 0;
-    font-size: 22px;
+    color: var(--recap-text-primary);
+    font-size: 16px;
     font-weight: 800;
     letter-spacing: -0.02em;
-    text-align: left;
-    flex: 0 1 auto;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 .share-section-body-visible {
@@ -2429,12 +2365,9 @@ textarea {
 
 .share-start-guide {
     display: grid;
-    gap: 22px;
-    padding: 30px;
-    border-radius: 18px;
-    background: var(--recap-bg-card);
-    border: 1px solid var(--recap-border-soft);
-    color: var(--recap-text-primary);
+    gap: 24px;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
 }
 
 .share-start-guide[hidden] {
@@ -2442,67 +2375,27 @@ textarea {
 }
 
 .share-start-copy {
-    display: grid;
-    gap: 10px;
-    min-width: 0;
-}
-
-.share-start-eyebrow {
-    color: var(--recap-accent);
-    font-size: 13px;
-    font-weight: 800;
+    text-align: center;
 }
 
 .share-start-copy h2 {
-    margin: 0;
-    font-size: 24px;
-    overflow-wrap: anywhere;
+    margin: 0 0 10px;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+}
+
+.share-start-copy h2:focus-visible {
+    outline: 2px solid var(--recap-ui-link);
+    outline-offset: 2px;
 }
 
 .share-start-copy p {
-    max-width: 680px;
-    margin: 0;
+    max-width: 42ch;
+    margin: 0 auto;
     color: var(--recap-text-secondary);
     font-size: 15px;
     line-height: 1.6;
-}
-
-.share-start-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.share-start-primary,
-.share-start-secondary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 40px;
-    padding: 0 16px;
-    border-radius: 8px;
-    box-sizing: border-box;
-    font-size: 14px;
-    font-weight: 800;
-    text-decoration: none;
-    max-width: 100%;
-}
-
-.share-start-primary {
-    background: var(--recap-accent);
-    color: #fff;
-}
-
-.share-start-primary[aria-disabled="true"],
-.share-start-secondary[aria-disabled="true"] {
-    cursor: not-allowed;
-    opacity: 0.55;
-}
-
-.share-start-secondary {
-    background: var(--recap-hover);
-    border: 1px solid var(--recap-border-soft);
-    color: var(--recap-text-primary);
 }
 
 .share-start-paths {
@@ -2513,59 +2406,92 @@ textarea {
 }
 
 .share-start-paths section {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
-    padding: 18px;
-    border-radius: 12px;
+    padding: 20px;
+    border-radius: 16px;
     background: var(--recap-bg-body);
     border: 1px solid var(--recap-border-soft);
+    box-shadow: 0 10px 30px var(--recap-shadow);
+}
+
+.light-theme .share-start-paths section {
+    background: #fff;
+    border-color: var(--recap-border);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
 
 .share-start-paths h3 {
     margin: 0 0 12px;
-    color: var(--recap-text-primary);
+    color: var(--recap-ui-link);
     font-size: 15px;
+    font-weight: 800;
 }
 
 .share-start-paths ol {
     display: grid;
-    gap: 10px;
-    margin: 0;
-    padding-left: 22px;
+    gap: 8px;
+    margin: 0 0 18px;
+    padding-left: 19px;
     color: var(--recap-text-secondary);
-    line-height: 1.55;
+    font-size: 14px;
+    line-height: 1.6;
 }
 
 .share-start-bookmarklet-wrap {
-    position: relative;
     min-width: 0;
-    margin-top: 14px;
+    margin-top: auto;
 }
 
-.share-start-copy-button {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 1;
-    min-height: 26px;
-    padding: 0 9px;
-    border-radius: 6px;
-    border: 1px solid var(--recap-border-soft);
-    background: var(--recap-hover);
-    color: var(--recap-text-primary);
-    font-size: 11px;
-    font-weight: 800;
+.share-start-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+    min-height: 40px;
+    margin-top: auto;
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    box-sizing: border-box;
+    background: var(--recap-ui-blue);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    text-decoration: none;
     cursor: pointer;
 }
 
-.share-start-copy-button:hover {
-    border-color: var(--recap-accent);
-    color: var(--recap-accent);
+.share-start-action:hover {
+    background: color-mix(in srgb, var(--recap-ui-blue) 86%, #000);
+}
+
+.share-start-action[aria-disabled="true"] {
+    background: var(--recap-hover);
+    color: var(--recap-text-secondary);
+    cursor: default;
+}
+
+.share-start-bookmarklet-details {
+    margin-bottom: 8px;
+}
+
+.share-start-bookmarklet-details summary {
+    width: fit-content;
+    padding-block: 4px;
+    border-radius: 4px;
+    color: var(--recap-ui-link);
+    font-size: 13px;
+    cursor: pointer;
 }
 
 .share-start-bookmarklet {
     display: block;
-    max-height: 96px;
-    padding: 42px 10px 10px;
+    max-height: 56px;
+    margin-top: 8px;
+    padding: 8px 10px;
     overflow: auto;
     border-radius: 8px;
     background: var(--recap-bg-panel);
@@ -2577,79 +2503,7 @@ textarea {
     word-break: break-all;
 }
 
-.share-receipt-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 10001;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    box-sizing: border-box;
-    padding: 24px;
-    overflow: auto;
-    background: rgba(9, 12, 18, 0.72);
-}
-
-.share-receipt-dialog {
-    width: min(420px, 100%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-}
-
-.share-receipt-actions {
-    align-self: stretch;
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-}
-
-.share-receipt-close,
-.share-receipt-save {
-    align-self: flex-end;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 32px;
-    padding: 0 12px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 800;
-    line-height: 1;
-    text-decoration: none;
-    cursor: pointer;
-}
-
-.share-receipt-save {
-    background: rgba(255, 255, 255, 0.9);
-    border-color: rgba(255, 255, 255, 0.75);
-    color: #111827;
-}
-
-.share-receipt-close:hover,
-.share-receipt-save:hover {
-    background: rgba(255, 255, 255, 0.2);
-}
-
-.share-receipt-save:hover {
-    background: #fff;
-}
-
-.receipt-image {
-    width: min(340px, 100%);
-    height: auto;
-    display: block;
-    border-radius: 2px;
-    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
-    user-select: none;
-    -webkit-user-drag: none;
-}
-
-@media (max-width: 900px) {
+@media (max-width: 800px) {
     .share-start-paths {
         grid-template-columns: 1fr;
     }
@@ -2670,32 +2524,21 @@ textarea {
     }
 
     body {
+        --share-page-padding: 0px;
         display: block;
-        padding: 0;
     }
 
     #recap-container {
         width: 100%;
         max-width: 100%;
         min-height: 100vh;
+        min-height: 100dvh;
         border-radius: 0;
         box-sizing: border-box;
     }
 
     .recap-modal-header {
-        align-items: stretch;
-        display: grid;
-        grid-template-columns: auto auto;
-        grid-template-areas:
-            "title title"
-            "type time"
-            "theme theme";
-        justify-content: start;
-        align-items: center;
-        column-gap: 6px;
-        row-gap: 9px;
-        position: relative;
-        padding-right: 14px;
+        gap: 10px 12px;
     }
 
     .recap-modal-header,
@@ -2710,73 +2553,22 @@ textarea {
         width: 100%;
     }
 
-    .share-header-copy,
-    .share-header-row,
-    .share-header-meta {
-        display: contents;
+    .recap-modal-header h1 {
+        font-size: 18px;
     }
 
     .recap-modal-header-buttons {
-        flex: 0 0 auto;
-        grid-area: theme;
         gap: 6px;
-        justify-self: start;
-        position: static;
-        z-index: auto;
     }
 
     .recap-modal-header-buttons button {
-        min-width: 0;
-        min-height: 26px;
+        min-height: 36px;
         padding: 4px 8px;
-        font-size: 11px;
-        line-height: 1.2;
-        white-space: nowrap;
     }
 
     .share-meta-banner {
         flex-direction: column;
         align-items: flex-start;
-    }
-
-    .share-header-row {
-        width: auto;
-        padding-right: 0;
-        box-sizing: border-box;
-    }
-
-    .share-header-meta {
-        width: auto;
-        flex: 0 1 auto;
-    }
-
-    .share-header-meta .badge-base {
-        min-height: 26px;
-        padding: 4px 8px;
-        font-size: 11px;
-        line-height: 1.2;
-        max-width: 100%;
-    }
-
-    #share-header-type {
-        grid-area: type;
-    }
-
-    #share-header-time {
-        grid-area: time;
-    }
-
-    .badge-complete {
-        margin-left: 0;
-    }
-
-    #share-title {
-        grid-area: title;
-        font-size: 18px;
-        line-height: 1.25;
-        text-align: left;
-        white-space: normal;
-        overflow-wrap: anywhere;
     }
 
     .share-proof-banner {
@@ -2951,16 +2743,6 @@ textarea {
 
     .share-start-guide {
         gap: 18px;
-        padding: 18px;
-        border-radius: 12px;
-    }
-
-    .share-start-copy {
-        gap: 8px;
-    }
-
-    .share-start-eyebrow {
-        font-size: 12px;
     }
 
     .share-start-copy h2 {
@@ -2970,26 +2752,6 @@ textarea {
 
     .share-start-copy p {
         font-size: 14px;
-        line-height: 1.5;
-    }
-
-    .share-start-actions,
-    .share-start-paths {
-        grid-template-columns: 1fr;
-    }
-
-    .share-start-actions {
-        flex-direction: column;
-    }
-
-    .share-start-primary,
-    .share-start-secondary {
-        width: 100%;
-        min-height: 38px;
-        padding: 0 12px;
-        font-size: 13px;
-        line-height: 1.25;
-        text-align: center;
     }
 
     .share-start-paths {
@@ -2997,20 +2759,8 @@ textarea {
     }
 
     .share-start-paths section {
-        padding: 14px;
-        border-radius: 10px;
-    }
-
-    .share-start-paths h3 {
-        font-size: 14px;
-        margin-bottom: 8px;
-    }
-
-    .share-start-paths ol {
-        gap: 7px;
-        padding-left: 18px;
-        font-size: 13px;
-        line-height: 1.45;
+        padding: 16px;
+        border-radius: 12px;
     }
 
     .recap-footer {
@@ -3022,29 +2772,5 @@ textarea {
 
     .recap-footer .separator {
         display: none;
-    }
-
-    .share-receipt-overlay {
-        padding: 12px;
-    }
-
-    .receipt-image {
-        width: min(340px, 100%);
-    }
-}
-
-@media (max-width: 360px) {
-    .recap-modal-header {
-        grid-template-columns: auto auto;
-        grid-template-areas:
-            "title title"
-            "type type"
-            "time time"
-            "theme theme";
-        column-gap: 6px;
-    }
-
-    .recap-modal-header-buttons button {
-        min-width: 0;
     }
 }
