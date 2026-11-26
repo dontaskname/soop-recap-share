@@ -101,6 +101,45 @@
       letter-spacing: -.02em;
     }
     #drop-title { font-size: 1.06rem; }
+    .verification-title {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      margin-bottom: .75rem;
+    }
+    .verification-title .section-title { margin: 0; }
+    #version-help { flex: 0 0 auto; }
+    #version-info {
+      width: 1.75rem;
+      min-height: 1.75rem;
+      padding: 0;
+      border: 0;
+      border-radius: .4rem;
+      background: transparent;
+      color: var(--muted);
+    }
+    #version-info:hover, #version-info:focus-visible {
+      background: var(--hover);
+      color: var(--accent);
+    }
+    .version-tooltip {
+      position: absolute;
+      z-index: 2;
+      inset-block-start: 100%;
+      inset-inline-start: 0;
+      box-sizing: border-box;
+      width: min(20rem, 100%);
+      padding: .5rem .65rem;
+      border: 1px solid var(--border);
+      border-radius: .45rem;
+      background: var(--row);
+      color: var(--text);
+      box-shadow: var(--shadow);
+      font-size: .8rem;
+      visibility: hidden;
+    }
+    #version-help:not([data-dismissed]):is(:hover, :focus-within) .version-tooltip { visibility: visible; }
     .icon { flex: 0 0 auto; width: 1rem; height: 1rem; }
     .upload-zone {
       display: flex;
@@ -146,6 +185,40 @@
     #status { margin: .55rem 0 0; color: var(--muted); font-size: .83rem; overflow-wrap: anywhere; }
     #status:empty { margin: 0; }
     #status[data-state="found"] { color: var(--accent); }
+    #scan-progress { margin-top: .65rem; }
+    .scan-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .15rem .6rem;
+    }
+    #scan-stage { margin: 0; font-size: .85rem; font-weight: 680; }
+    #scan-elapsed, #scan-detail { color: var(--muted); font-size: .78rem; }
+    #scan-elapsed { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .scan-track {
+      overflow: hidden;
+      height: .25rem;
+      margin-top: .35rem;
+      border-radius: 1rem;
+      background: var(--row);
+    }
+    .scan-track span {
+      display: block;
+      width: 33%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent);
+      animation: scan-sweep 1.6s ease-in-out infinite;
+    }
+    #scan-detail { margin-top: .3rem; }
+    @keyframes scan-sweep {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(303%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .scan-track span { animation: none; }
+    }
     #review {
       display: grid;
       grid-template-columns: minmax(0, 1.45fr) minmax(18.5rem, 1fr);
@@ -251,10 +324,18 @@
   </header>
   <main class="shell">
     <section id="drop" class="panel" aria-labelledby="drop-title">
-      <h1 id="drop-title" class="section-title">
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4m0 8v4h-4M4 16v4h4m0-8h8m-6-3h4m-4 6h4"/></svg>
-        워터마크 검증
-      </h1>
+      <div class="verification-title">
+        <h1 id="drop-title" class="section-title">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4m0 8v4h-4M4 16v4h4m0-8h8m-6-3h4m-4 6h4"/></svg>
+          워터마크 검증
+        </h1>
+        <div id="version-help">
+          <button id="version-info" type="button" aria-label="워터마크 적용 버전" aria-describedby="version-tooltip">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>
+          </button>
+          <span id="version-tooltip" class="version-tooltip" role="tooltip">확장 프로그램 1.7.4(2026.11.27) 이상에서 캡처한 리캡에만 워터마크가 들어갑니다.</span>
+        </div>
+      </div>
       <div class="upload-zone">
         <div class="upload-copy">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-4.5-4.5L7 21"/></svg>
@@ -268,6 +349,16 @@
           <button id="choose" type="button">파일 선택</button>
           <button id="paste" type="button">붙여넣기</button>
         </div>
+      </div>
+      <div id="scan-progress" hidden>
+        <div class="scan-heading">
+          <p id="scan-stage" role="status"></p>
+          <span id="scan-elapsed" aria-hidden="true"></span>
+        </div>
+        <div class="scan-track" role="progressbar" aria-label="워터마크 판독 진행 상태">
+          <span aria-hidden="true"></span>
+        </div>
+        <div id="scan-detail" hidden></div>
       </div>
       <p id="status" role="status"></p>
     </section>
@@ -2039,11 +2130,12 @@
 
     const rankGridAdjustments = [-0.0005, 0.0005, -0.001, 0.001, -0.0015, 0.0015];
 
-    function readRankGridFirst(imageData, normalized, regions, scale) {
+    function readRankGridFirst(imageData, normalized, regions, scale, report) {
       const rankRows = list => list.filter(region => region.width / region.height > 4 &&
         region.width >= 360 && region.width <= 1000 && region.height >= 24 && region.height <= 70);
       const firstRows = rankRows(regions);
       if (firstRows.length < 4 || normalized.width * normalized.height > 4000000) return [];
+      report("rankGrid");
       const read = (image, rows) => rows.flatMap(region => {
         const record = readSmallRankRow(image, region, true);
         return record ? [{ region, record, layout: "row" }] : [];
@@ -2096,7 +2188,21 @@
       }));
     }
 
-    function decodeImage(imageData) {
+    function decodeImage(imageData, onProgress) {
+      let reportedStage;
+      let reportedCount = false;
+      let lastReport = -Infinity;
+      const report = (stage, current, total) => {
+        if (!onProgress) return;
+        const now = performance.now();
+        if (stage === reportedStage && (reportedCount || !total) && now - lastReport < 120) return;
+        reportedStage = stage;
+        reportedCount = Boolean(total);
+        lastReport = now;
+        onProgress(stage, current, total);
+      };
+
+      report("find");
       const regions = coloredRegions(imageData);
       const { width, height } = imageData;
       const card = regions[0] ?? { x: 0, y: 0, width, height };
@@ -2104,16 +2210,19 @@
         width / height >= 0.65 && width / height <= 2.4 &&
         card.width >= width * 0.9 && card.height >= height * 0.9;
       if (singleCard && width / height >= 1.15 && width / height <= 1.8 && height <= 210) {
+        report("read", 1, 1);
         const record = readAlignedCardCrop(imageData);
         if (record) return [{ region: card, record, layout: "card" }];
       }
+      report("align");
       const scale = measuredTileScale(imageData, regions, singleCard);
       const factor = nativeTileScale / scale;
       const readOriginal = (seed = []) => {
-        const found = decodeRegions(imageData, regions, seed);
+        const found = decodeRegions(imageData, regions, seed, false, true, report);
         if (found.length || !singleCard) return found;
 
         if (Math.abs(factor - 1) < 0.002) return found;
+        report("retryCards");
         for (const adjustment of [-1, 0, 1]) {
           const restored = resizeForReading(imageData, factor, adjustment, true);
           const bounds = { x: 0, y: 0, width: restored.width, height: restored.height };
@@ -2126,6 +2235,7 @@
           width * height * factor * factor > 20000000) return readOriginal();
 
       if (singleCard && isCompactCard(width, height)) {
+        report("retryCards");
         // A tight crop has fewer pilot samples. Retry the closest whole-percent resize.
         const percentScale = Math.round(scale * 200) / 200;
         const restored = resizeForReading(imageData, nativeTileScale / percentScale);
@@ -2135,6 +2245,7 @@
         if (record) return [{ region: card, record, layout: "card" }];
       }
 
+      report("align");
       const normalized = resizeForReading(imageData, factor);
       const normalizedRegions = coloredRegions(normalized);
       const intoOriginal = (region, source) => {
@@ -2142,8 +2253,8 @@
         const scaleY = imageData.height / source.height;
         return { x: region.x * scaleX, y: region.y * scaleY, width: region.width * scaleX, height: region.height * scaleY };
       };
-      const initialResults = readRankGridFirst(imageData, normalized, normalizedRegions, scale);
-      const seed = decodeRegions(normalized, normalizedRegions, initialResults, true).map(({ region, record, layout }) => ({
+      const initialResults = readRankGridFirst(imageData, normalized, normalizedRegions, scale, report);
+      const seed = decodeRegions(normalized, normalizedRegions, initialResults, true, true, report).map(({ region, record, layout }) => ({
         region: intoOriginal(region, normalized), record, layout,
       }));
       const uncoveredCard = (region, source) => {
@@ -2157,6 +2268,7 @@
       // A rounded image height can leave a card between pixel rows.
       if (seed.length && normalized.width * normalized.height <= 4000000 &&
           normalizedRegions.some(region => uncoveredCard(region, normalized))) {
+        report("retryCards");
         const alternate = resizeForReading(imageData, factor, 1);
         for (const region of coloredRegions(alternate)) {
           if (!uncoveredCard(region, alternate)) continue;
@@ -2179,6 +2291,7 @@
       // Retry unresolved regions at nearby pixel grids without reading outlines again.
       if (ranking.length && expectedRows.length >= 4 && normalized.width * normalized.height <= 4000000 &&
           expectedRows.some(row => !isCovered(row))) {
+        report("retryRows");
         const tried = new Set([normalized.width + "," + normalized.height]);
         for (const delta of rankGridAdjustments) {
           const adjustment = nativeTileScale / (scale + delta);
@@ -2225,6 +2338,7 @@
         const tall = ratio >= 0.65 && ratio < 1 && widthAtNative >= 120 && widthAtNative <= 280 && heightAtNative <= 370;
         return region.width >= 100 && (compact || tall) && !isCovered(region);
       });
+      if (remaining.length) report("retryCards");
       for (const region of remaining.slice(0, 4)) {
         const refined = refineCardBounds(imageData, region);
         const retries = Object.keys(region).every(key => region[key] === refined[key]) ? [region] : [region, refined];
@@ -2243,7 +2357,7 @@
       return readOriginal(seed);
     }
 
-    function decodeRegions(imageData, regions, seed = [], restored = false, findOutlines = true) {
+    function decodeRegions(imageData, regions, seed = [], restored = false, findOutlines = true, report) {
       const { data, width, height } = imageData;
       const whole = { x: 0, y: 0, width, height };
       const checked = new Set();
@@ -2326,7 +2440,8 @@
           found[duplicate] = result;
         }
       };
-      for (const region of regions) {
+      for (const [index, region] of regions.entries()) {
+        report?.("read", index + 1, regions.length);
         const area = region.width * region.height;
         if (seed.some(item => {
           const overlap = overlapArea(item.region, region);
@@ -2336,8 +2451,10 @@
         if (result) addResult(result);
       }
       if (!findOutlines) return found;
+      report?.("outline");
       const outlines = outlineRegions(imageData);
-      for (const region of outlines) {
+      for (const [index, region] of outlines.entries()) {
+        report?.("outline", index + 1, outlines.length);
         const area = region.width * region.height;
         let enclosed = 0;
         const duplicateOutline = found.some(item => {
@@ -2355,6 +2472,7 @@
       if (found.length) return found.sort((a, b) =>
         Math.abs(a.region.y - b.region.y) < 10 ? a.region.x - b.region.x : a.region.y - b.region.y);
       if ([...regions, ...outlines].some(region => region.width === width && region.height === height)) return [];
+      report?.("whole");
       const fallback = check(whole);
       return fallback ? [fallback] : [];
     }
@@ -2365,6 +2483,10 @@
     const drop = document.getElementById("drop");
     const input = document.getElementById("file");
     const statusLine = document.getElementById("status");
+    const scanProgress = document.getElementById("scan-progress");
+    const scanStage = document.getElementById("scan-stage");
+    const scanElapsed = document.getElementById("scan-elapsed");
+    const scanDetail = document.getElementById("scan-detail");
     const review = document.getElementById("review");
     const preview = document.getElementById("preview-image");
     const regions = document.getElementById("shot");
@@ -2372,12 +2494,26 @@
     const result = document.getElementById("result");
     const shared = document.getElementById("shared");
     const themeToggle = document.getElementById("theme-toggle");
+    const versionHelp = document.getElementById("version-help");
+    const versionInfo = document.getElementById("version-info");
     const root = document.documentElement;
     const metadataFields = [["extensionVersion", "확장 버전"], ["captureDate", "캡처 시각"]];
     const recordGroups = [
       { layout: "card", title: "TOP 4 카드", prefix: "T" },
       { layout: "row", title: "채널 순위", prefix: "R" },
     ];
+    const scanStages = {
+      open: "이미지 파일 여는 중",
+      prepare: "이미지 픽셀 준비 중",
+      find: "워터마크 후보 영역 찾는 중",
+      align: "캡처 배율 보정 중",
+      rankGrid: "채널 순위 간격 맞추는 중",
+      read: "후보 영역의 워터마크 읽는 중",
+      outline: "윤곽에서 추가 영역 확인 중",
+      retryCards: "카드 영역 다시 확인 중",
+      retryRows: "채널 순위 다시 확인 중",
+      whole: "이미지 전체에서 워터마크 찾는 중",
+    };
     let latestRequest = 0;
     let activeRead;
 
@@ -2389,18 +2525,36 @@
       try { localStorage.setItem("soop-recap-watermark-theme", theme); } catch {}
     });
 
+    const reopenVersionTip = () => versionHelp.removeAttribute("data-dismissed");
+    versionHelp.addEventListener("pointerenter", reopenVersionTip);
+    versionInfo.addEventListener("focus", reopenVersionTip);
+    versionInfo.addEventListener("click", () => {
+      reopenVersionTip();
+      versionInfo.focus();
+    });
+    document.addEventListener("keydown", ({ key }) => {
+      if (key === "Escape" && versionHelp.matches(":hover, :focus-within")) {
+        versionHelp.setAttribute("data-dismissed", "");
+      }
+    });
+
     function setStatus(message, found = false) {
       statusLine.textContent = message;
       if (found) statusLine.dataset.state = "found";
       else delete statusLine.dataset.state;
     }
 
-    async function readPixels(pixels, signal) {
-      if (typeof Worker !== "function") return decodeImage(pixels);
+    async function readPixels(pixels, signal, report) {
+      if (typeof Worker !== "function") return decodeImage(pixels, report);
       const decoder = document.getElementById("watermark-decoder").textContent;
-      const source = new Blob([decoder, "\nself.onmessage = event => self.postMessage(decodeImage(event.data));"], {
-        type: "text/javascript",
-      });
+      const workerHandler = `
+        self.onmessage = ({ data }) => {
+          const found = decodeImage(data, (stage, current, total) =>
+            self.postMessage({ type: "progress", stage, current, total }));
+          self.postMessage({ type: "result", found });
+        };
+      `;
+      const source = new Blob([decoder, workerHandler], { type: "text/javascript" });
       const url = URL.createObjectURL(source);
       let worker;
       let abort;
@@ -2409,7 +2563,12 @@
         return await new Promise((resolve, reject) => {
           abort = () => resolve([]);
           signal.addEventListener("abort", abort, { once: true });
-          worker.onmessage = event => resolve(event.data);
+          worker.onmessage = ({ data }) => {
+            if (signal.aborted) return;
+            if (data.type === "progress") report(data.stage, data.current, data.total);
+            else if (data.type === "result") resolve(data.found);
+          };
+          worker.onmessageerror = () => reject(new Error("Could not read worker response."));
           worker.onerror = event => reject(new Error(event.message));
           worker.postMessage(pixels, [pixels.data.buffer]);
         });
@@ -2521,11 +2680,31 @@
 
     async function inspect(file) {
       if (!file) return;
-      const request = ++latestRequest;
+      latestRequest++;
       activeRead?.abort();
       const read = new AbortController();
       activeRead = read;
-      setStatus("워터마크를 읽는 중입니다.");
+      const startedAt = performance.now();
+      const showStage = (stage, current, total) => {
+        if (read.signal.aborted) return;
+        const message = scanStages[stage];
+        if (scanStage.textContent !== message) scanStage.textContent = message;
+        const detail = total ? (stage === "outline" ? "추가 후보 " : "후보 영역 ") + current + "/" + total : "";
+        if (scanDetail.textContent !== detail) scanDetail.textContent = detail;
+        scanDetail.hidden = !detail;
+      };
+      const updateElapsed = () => {
+        const seconds = Math.floor((performance.now() - startedAt) / 1000);
+        const minutes = Math.floor(seconds / 60);
+        scanElapsed.textContent = "경과 " + (minutes ? minutes + "분 " : "") + seconds % 60 + "초";
+      };
+      setStatus("");
+      showStage("open");
+      updateElapsed();
+      scanProgress.hidden = false;
+      const timer = setInterval(updateElapsed, 1000);
+      read.signal.addEventListener("abort", () => clearInterval(timer), { once: true });
+
       review.hidden = true;
       shared.replaceChildren();
       Array.from(records.tBodies).forEach(body => body.remove());
@@ -2533,36 +2712,34 @@
       let bitmap;
       try {
         bitmap = await createImageBitmap(file);
-      } catch {
-        if (request === latestRequest) {
-          activeRead = undefined;
-          setStatus("이 이미지 파일을 열 수 없습니다.");
-        }
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, 0));
-      if (request !== latestRequest) {
-        bitmap.close();
-        return;
-      }
-      try {
+        if (read.signal.aborted) return;
+        showStage("prepare");
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (read.signal.aborted) return;
         const scale = Math.min(1, Math.sqrt(20000000 / (bitmap.width * bitmap.height)));
         preview.width = Math.max(1, Math.round(bitmap.width * scale));
         preview.height = Math.max(1, Math.round(bitmap.height * scale));
         const context = preview.getContext("2d", { willReadFrequently: true });
         context.drawImage(bitmap, 0, 0, preview.width, preview.height);
-        const found = await readPixels(context.getImageData(0, 0, preview.width, preview.height), read.signal);
-        if (request !== latestRequest) return;
+        const pixels = context.getImageData(0, 0, preview.width, preview.height);
+        const found = await readPixels(pixels, read.signal, showStage);
+        if (read.signal.aborted) return;
         showResults(found);
         review.hidden = false;
         setStatus(found.length ?
           found.length + "개 영역의 워터마크를 읽었습니다." : "이 이미지에서 워터마크를 읽을 수 없습니다.",
           Boolean(found.length));
       } catch {
-        if (request === latestRequest) setStatus("이미지 처리 중 문제가 생겼습니다.");
+        if (!read.signal.aborted) {
+          setStatus(bitmap ? "이미지 처리 중 문제가 생겼습니다." : "이 이미지 파일을 열 수 없습니다.");
+        }
       } finally {
-        if (activeRead === read) activeRead = undefined;
-        bitmap.close();
+        bitmap?.close();
+        clearInterval(timer);
+        if (activeRead === read) {
+          activeRead = undefined;
+          scanProgress.hidden = true;
+        }
       }
     }
 
