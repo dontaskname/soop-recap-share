@@ -1821,10 +1821,18 @@
       return { chroma, texture, weights, energy, origin };
     }
 
-    function readSmallRankRow(imageData, region, restored = false) {
+    function readSmallRankRow(imageData, region, restored = false, localBackground = false) {
       const { width, height } = region;
       if (width < 360 || width > (restored ? 1000 : 780) || height < 24 || height > (restored ? 70 : 55)) return null;
-      const { chroma, texture, weights, energy, origin } = rankRowSpectrum(imageData, region);
+      const spectrum = rankRowSpectrum(imageData, region);
+      if (!localBackground) return fitRankRow(region, restored, spectrum, null, 0);
+      const background = blur(spectrum.chroma, width, height, smallCardBackground);
+      const padding = Math.ceil(colorSampleStep(imageData.width, imageData.height) / 2);
+      return fitRankRow(region, restored, spectrum, background, 0) ||
+        fitRankRow(region, restored, spectrum, background, padding);
+    }
+
+    function fitRankRow({ width, height }, restored, { chroma, texture, weights, energy, origin }, field, padding) {
 
       // Each row embeds the same payload in two strips near its content.
       const stripWidth = Math.ceil(width * 0.273);
@@ -1838,15 +1846,21 @@
       for (let x = inset; x < width - inset; x++) {
         const inLeft = x >= left && x < left + stripWidth;
         if (!inLeft && x < right) continue;
-        const start = inLeft ? leftTop : rightTop;
-        // The bottom margin estimates the row's horizontal background gradient.
+        const stripTop = inLeft ? leftTop : rightTop;
+        // At low resolution, resizing spreads the encoded strip into its
+        // margins. A local low-pass background keeps those samples from
+        // subtracting the same signal from the strip.
         const background = [];
-        for (let y = height - 7; y <= height - 3; y++) background.push(chroma[y * width + x]);
-        background.sort((a, b) => a - b);
-        for (let y = start; y <= Math.min(height - 3, start + stripHeight - 1); y++) {
+        if (!field) {
+          for (let y = height - 7; y <= height - 3; y++) background.push(chroma[y * width + x]);
+          background.sort((a, b) => a - b);
+        }
+        const start = Math.max(1, stripTop - padding);
+        const end = Math.min(height - 3, stripTop + stripHeight - 1 + Math.max(0, padding - 1));
+        for (let y = start; y <= end; y++) {
           const i = y * width + x;
           if (texture[i] >= 65) continue;
-          const value = Math.max(-4, Math.min(4, chroma[i] - background[2]));
+          const value = Math.max(-4, Math.min(4, chroma[i] - (field ? field[i] : background[2])));
           samples.push({ x, y, value, weight: weights[i] });
         }
       }
@@ -2198,10 +2212,74 @@
       }
     }
 
+    const rankGridRows = list => list.filter(region => region.width / region.height > 4 &&
+      region.width >= 360 && region.width <= 1000 && region.height >= 24 && region.height <= 70);
+
+    function rankGridConfidence(image, rows) {
+      const sample = rows.filter((_, i) => i % Math.ceil(rows.length / 8) === 0);
+      if (!sample.length) return 0;
+      let score = 0;
+      for (const region of sample) {
+        const { energy, origin } = rankRowSpectrum(image, region);
+        let contrast = 0;
+        for (let i = 0; i < pilot.length; i++) {
+          const [left, right] = watermarkModels.row.pairs[i];
+          const a = Math.hypot(...energy.complex(...left));
+          const b = Math.hypot(...energy.complex(...right));
+          contrast += pilot[i] * (b - a) / Math.max(1e-9, a + b);
+        }
+        score += (origin?.score ?? 0) / 12 + contrast / pilot.length;
+      }
+      return score / sample.length;
+    }
+
+    function refineSparseRankGrid(imageData, normalized, regions, scale, outlineScale, report) {
+      const rows = rankGridRows(regions);
+      if (rows.length < 4 || normalized.width * normalized.height > 4000000) return null;
+      const heights = rows.map(row => row.height).sort((a, b) => a - b);
+      const ratio = imageData.height / normalized.height;
+      if (heights[Math.floor(heights.length / 2)] * ratio >= 24) return null;
+      report("rankGrid");
+      let best = { image: normalized, regions, score: rankGridConfidence(normalized, rows) };
+      const centers = [normalized];
+      const seen = new Set([normalized.width + "," + normalized.height]);
+      const evaluate = image => {
+        const key = image.width + "," + image.height;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const regions = coloredRegions(image);
+        const candidates = rankGridRows(regions);
+        if (candidates.length < Math.ceil(rows.length * 0.65)) return;
+        const score = rankGridConfidence(image, candidates);
+        if (score > best.score) best = { image, regions, score };
+      };
+      // The coarse frequency estimate is quantized. Look near it first, then
+      // resolve horizontal and vertical pixel rounding around the best grid.
+      for (const image of neighboringRankGrids(imageData, normalized, scale)) evaluate(image);
+      if (outlineScale && outlineScale !== scale) {
+        const fromOutline = resizeForReading(imageData, nativeTileScale / outlineScale);
+        centers.push(fromOutline);
+        evaluate(fromOutline);
+        for (const image of neighboringRankGrids(imageData, fromOutline, outlineScale)) evaluate(image);
+      }
+      centers.push(best.image);
+      for (const center of centers) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const width = center.width + dx;
+            const height = center.height + dy;
+            if (seen.has(width + "," + height)) continue;
+            const stepX = imageData.width / width;
+            const stepY = imageData.height / height;
+            evaluate(resizeForReading(imageData, 1, 0, false, { x: 0, y: 0, stepX, stepY }));
+          }
+        }
+      }
+      return best;
+    }
+
     function readRankGridFirst(imageData, normalized, regions, scale, report) {
-      const rankRows = list => list.filter(region => region.width / region.height > 4 &&
-        region.width >= 360 && region.width <= 1000 && region.height >= 24 && region.height <= 70);
-      const firstRows = rankRows(regions);
+      const firstRows = rankGridRows(regions);
       if (firstRows.length < 4 || normalized.width * normalized.height > 4000000) return [];
       report("rankGrid");
       const read = (image, rows) => rows.flatMap(region => {
@@ -2211,29 +2289,12 @@
       const early = read(normalized, firstRows.slice(0, 3));
       if (early.length) return early;
 
-      const confidence = (image, rows) => {
-        const sample = rows.filter((_, i) => i % Math.ceil(rows.length / 8) === 0);
-        if (!sample.length) return 0;
-        let score = 0;
-        for (const region of sample) {
-          const { energy, origin } = rankRowSpectrum(image, region);
-          let contrast = 0;
-          for (let i = 0; i < pilot.length; i++) {
-            const [left, right] = watermarkModels.row.pairs[i];
-            const a = Math.hypot(...energy.complex(...left));
-            const b = Math.hypot(...energy.complex(...right));
-            contrast += pilot[i] * (b - a) / Math.max(1e-9, a + b);
-          }
-          score += (origin?.score ?? 0) / 12 + contrast / pilot.length;
-        }
-        return score / sample.length;
-      };
-      let score = confidence(normalized, firstRows) + 0.04;
+      let score = rankGridConfidence(normalized, firstRows) + 0.04;
       let best = null;
       for (const image of neighboringRankGrids(imageData, normalized, scale)) {
-        const rows = rankRows(coloredRegions(image));
+        const rows = rankGridRows(coloredRegions(image));
         if (rows.length < Math.ceil(firstRows.length * 0.65)) continue;
-        const candidate = confidence(image, rows);
+        const candidate = rankGridConfidence(image, rows);
         if (candidate <= score) continue;
         score = candidate;
         best = { image, rows };
@@ -2277,7 +2338,18 @@
         if (record) return [{ region: card, record, layout: "card" }];
       }
       report("align");
-      const scale = measuredTileScale(imageData, regions, singleCard);
+      let scale = measuredTileScale(imageData, regions, singleCard);
+      let outlineScale;
+      if (regions.length >= 2 && regions.every(region =>
+          region.width >= width * 0.65 && region.width / region.height > 4 && region.height <= nativeTileSizes.row[1])) {
+        const outlines = outlineRegions(imageData).filter(region =>
+          region.width >= width * 0.65 && region.width / region.height > 5);
+        if (outlines.length > regions.length) {
+          const measured = measuredTileScale(imageData, outlines, false);
+          if (measured !== nativeTileScale) outlineScale = measured;
+        }
+        if (scale === nativeTileScale && outlineScale) scale = outlineScale;
+      }
       const factor = nativeTileScale / scale;
       const readOriginal = (seed = []) => {
         const found = decodeRegions(imageData, regions, seed, false, true, report);
@@ -2308,15 +2380,20 @@
       }
 
       report("align");
-      const normalized = resizeForReading(imageData, factor);
-      const normalizedRegions = coloredRegions(normalized);
+      let normalized = resizeForReading(imageData, factor);
+      let normalizedRegions = coloredRegions(normalized);
+      const sparseGrid = refineSparseRankGrid(imageData, normalized, normalizedRegions, scale, outlineScale, report);
+      if (sparseGrid) {
+        normalized = sparseGrid.image;
+        normalizedRegions = sparseGrid.regions;
+      }
       const intoOriginal = (region, source) => {
         const scaleX = imageData.width / source.width;
         const scaleY = imageData.height / source.height;
         return { x: region.x * scaleX, y: region.y * scaleY, width: region.width * scaleX, height: region.height * scaleY };
       };
-      const initialResults = readRankGridFirst(imageData, normalized, normalizedRegions, scale, report);
-      const seed = decodeRegions(normalized, normalizedRegions, initialResults, true, true, report).map(({ region, record, layout }) => ({
+      const initialResults = sparseGrid ? [] : readRankGridFirst(imageData, normalized, normalizedRegions, scale, report);
+      const seed = decodeRegions(normalized, normalizedRegions, initialResults, true, true, report, Boolean(sparseGrid)).map(({ region, record, layout }) => ({
         region: intoOriginal(region, normalized), record, layout,
       }));
       const uncoveredCard = (region, source) => {
@@ -2410,7 +2487,7 @@
       return readOriginal(seed);
     }
 
-    function decodeRegions(imageData, regions, seed = [], restored = false, findOutlines = true, report) {
+    function decodeRegions(imageData, regions, seed = [], restored = false, findOutlines = true, report, localRankBackground = false) {
       const { data, width, height } = imageData;
       const whole = { x: 0, y: 0, width, height };
       const checked = new Set();
@@ -2421,7 +2498,7 @@
         const layout = region.width / region.height > 4 ? "row" : "card";
         let refined;
         if (layout === "row") {
-          const record = readSmallRankRow(imageData, region, restored);
+          const record = readSmallRankRow(imageData, region, restored, localRankBackground);
           if (record) return { region, record, layout };
         } else if (isCompactCard(region.width, region.height) && region.width <= 165) {
           refined = refineCardBounds(imageData, region);
