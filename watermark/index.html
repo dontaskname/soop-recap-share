@@ -1695,16 +1695,10 @@
       };
       const [edgeLength] = lengths.reduce((best, candidate) => drop(candidate[0]) > drop(best[0]) ? candidate : best);
       const folded = foldTileSamples(samples, "card");
-      if (restored) {
-        if (folded.length < edgeLength * 2 || !Number.isFinite(drop(edgeLength))) return null;
-        const fit = preparePayloadFit(folded, origin, edgeLength, "card", resampledCardCarrierResponse);
-        return recoverSoftCard(fit(0.255));
-      }
-
       // The known pilot tones measure the signal left after the localized masks,
       // background subtraction and texture weighting. Median paired differences
       // suppress neighboring payload leakage and strong artwork edges.
-      const response = compactCardCarrierResponse;
+      const response = restored ? resampledCardCarrierResponse : compactCardCarrierResponse;
       const weightSum = folded.reduce((total, sample) => total + sample.weight, 0);
       const gains = pilot.map((sign, i) => {
         const active = Number(sign > 0);
@@ -1714,6 +1708,12 @@
       const middle = gains.length / 2;
       const amplitude = (gains[middle - 1] + gains[middle]) / weightSum;
       const hasAmplitude = amplitude > 0 && Number.isFinite(amplitude);
+      if (restored) {
+        if (!hasAmplitude || folded.length < edgeLength * 2 || !Number.isFinite(drop(edgeLength))) return null;
+        const fit = preparePayloadFit(folded, origin, edgeLength, "card", response);
+        const bits = fit(amplitude);
+        return recoverRecord(bits) || recoverSoftCard(bits);
+      }
       if (tall && !hasAmplitude) return null;
       let preferredFit;
       for (const size of new Set([edgeLength, ...lengths.slice(0, 2).map(([length]) => length)])) {
