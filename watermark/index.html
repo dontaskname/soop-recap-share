@@ -466,84 +466,69 @@
       };
     }
 
-    function readRecord(contrast) {
-      const exact = readExactRecord(contrast);
-      if (exact || contrast.length < 15) return exact;
-
-      // Hamming(15, 11) identifies one bit position per block. Try that
-      // deterministic correction once and independently check the received CRC.
-      const maximumWords = Math.floor(contrast.length / 15);
-      const words = new Uint16Array(maximumWords);
-      let firstChecksumBit = 0;
-      let endBit = 0;
-      let wordCount = maximumWords;
-      let changedDataBits = 0;
-      for (let block = 0; block < wordCount; block++) {
+    function recoverRecord(contrast, maxRepairCost = Infinity) {
+      const words = [];
+      const parity = [];
+      const corrected = [];
+      for (let block = 0; block < contrast.length / 15; block++) {
         let word = 0;
         let syndrome = 0;
-        for (let i = 0; i < 15; i++) {
-          const value = contrast[block * 15 + i];
-          if (!Number.isFinite(value) || value === 0) return null;
-          if (value > 0) {
-            word |= 1 << i;
-            syndrome ^= i + 1;
+        for (let position = 1; position <= 15; position++) {
+          if (contrast[block * 15 + position - 1] >= 0) {
+            word |= 1 << (position - 1);
+            syndrome ^= position;
           }
         }
-
-        const corrected = syndrome ? word ^ (1 << (syndrome - 1)) : word;
-        if (block === 0) {
-          let header = 0;
-          for (const position of dataPositions.slice(0, 8)) {
-            header = (header << 1) | ((corrected >> (position - 1)) & 1);
-          }
-          const shape = recordLayout(header);
-          if (!shape) return null;
-          endBit = shape.bytes * 8;
-          firstChecksumBit = endBit - 16;
-          wordCount = Math.ceil(endBit / dataPositions.length);
-          if (wordCount > maximumWords) return null;
-        }
-
-        const dataIndex = dataPositions.indexOf(syndrome);
-        if (dataIndex >= 0) {
-          const bit = block * dataPositions.length + dataIndex;
-          if (bit >= firstChecksumBit && bit < endBit) return null;
-          if (bit < firstChecksumBit) {
-            const strengths = Array.from({ length: 15 }, (_, i) => Math.abs(contrast[block * 15 + i]));
-            const confidence = strengths[syndrome - 1];
-            strengths.sort((a, b) => a - b);
-            // A repair must point to one of the weakest measured tones.
-            if (confidence > strengths[2] || confidence >= strengths[7] / 2 || ++changedDataBits > 4) return null;
-          }
-        }
-        words[block] = corrected;
+        words.push(word);
+        parity.push(syndrome);
+        corrected.push(syndrome ? word ^ (1 << (syndrome - 1)) : word);
       }
-      return changedDataBits ? unpackRecord(words.subarray(0, wordCount)) : null;
-    }
+      const direct = unpackRecord(corrected);
+      if (direct) return direct;
 
-
-    function readExactRecord(contrast) {
-      // Read the measured data symbols directly. Parity symbols are skipped;
-      // a failed checksum never triggers a change to the observed data.
       let header = 0;
       for (const position of dataPositions.slice(0, 8)) {
-        const value = contrast[position - 1];
-        if (!Number.isFinite(value) || value === 0) return null;
-        header = (header << 1) | Number(value > 0);
+        header = (header << 1) | ((corrected[0] >> (position - 1)) & 1);
       }
       const layout = recordLayout(header);
-      if (!layout) return null;
-      const bitCount = layout.bytes * 8;
-      const words = new Uint16Array(Math.ceil(bitCount / dataPositions.length));
-      if (contrast.length < words.length * 15) return null;
-      for (let bit = 0; bit < bitCount; bit++) {
-        const block = Math.floor(bit / dataPositions.length);
-        const position = dataPositions[bit % dataPositions.length] - 1;
-        const value = contrast[block * 15 + position];
-        if (!Number.isFinite(value) || value === 0) return null;
-        if (value > 0) words[block] |= 1 << position;
+      const blocks = layout ? Math.ceil(layout.bytes * 8 / 11) : words.length;
+      const alternatives = [];
+      for (let block = 0; block < blocks; block++) {
+        const syndrome = parity[block];
+        if (!syndrome) continue;
+        const weight = position => Math.abs(contrast[block * 15 + position - 1]);
+        for (let left = 1; left <= 15; left++) {
+          const right = syndrome ^ left;
+          if (right <= left || right > 15) continue;
+          alternatives.push({
+            block,
+            cost: weight(left) + weight(right) - weight(syndrome),
+            word: words[block] ^ (1 << (left - 1)) ^ (1 << (right - 1)),
+          });
+        }
       }
-      return unpackRecord(words);
+      alternatives.sort((a, b) => a.cost - b.cost);
+      for (const choice of alternatives.slice(0, 12)) {
+        if (choice.cost > maxRepairCost) break;
+        const trial = corrected.slice();
+        trial[choice.block] = choice.word;
+        const result = unpackRecord(trial);
+        if (result) return result;
+      }
+      const nearest = alternatives.slice(0, 7);
+      for (let i = 0; i < nearest.length; i++) {
+        for (let j = i + 1; j < nearest.length; j++) {
+          const a = nearest[i];
+          const b = nearest[j];
+          if (a.block === b.block || a.cost + b.cost > maxRepairCost) continue;
+          const trial = corrected.slice();
+          trial[a.block] = a.word;
+          trial[b.block] = b.word;
+          const result = unpackRecord(trial);
+          if (result) return result;
+        }
+      }
+      return null;
     }
 
     function reflect(index, length) {
@@ -851,7 +836,7 @@
               };
               return (project(right) - project(left)) / Math.max(left.magnitude + right.magnitude, 1e-9);
             });
-            const record = readRecord(payload);
+            const record = recoverRecord(payload);
             if (record) return record;
           }
         }
@@ -885,7 +870,7 @@
       candidates.sort((a, b) => b.score - a.score);
       for (const { scale } of candidates.slice(0, 18)) {
         const payload = model.pairs.slice(pilot.length).map(pair => contrast(pair, scale));
-        const record = readRecord(payload);
+        const record = recoverRecord(payload);
         if (record) return record;
       }
       return coherent ? readCardPhase(getEnergy, candidates) : null;
@@ -1590,6 +1575,76 @@
     const compactCardCarrierResponse = cardCarrierResponse(0.7);
     const resampledCardCarrierResponse = cardCarrierResponse(0.65);
 
+    const hammingCodewords = Uint16Array.from({ length: 1 << 11 }, (_, data) => {
+      let word = 0;
+      let syndrome = 0;
+      dataPositions.forEach((position, i) => {
+        if (!(data & (1 << i))) return;
+        word |= 1 << (position - 1);
+        syndrome ^= position;
+      });
+      for (const position of [1, 2, 4, 8]) {
+        if (syndrome & position) word |= 1 << (position - 1);
+      }
+      return word;
+    });
+
+    function recoverSoftRecord(bits) {
+      const words = [];
+      const alternatives = [];
+      const costs = new Float64Array(1 << 15);
+      for (let start = 0; start < bits.length; start += 15) {
+        let observed = 0;
+        for (let bit = 0; bit < 15; bit++) {
+          const strength = bits[start + bit];
+          const mask = 1 << bit;
+          if (strength >= 0) observed |= mask;
+          for (let lower = 0; lower < mask; lower++) costs[mask | lower] = costs[lower] + Math.abs(strength);
+        }
+        const choices = [];
+        for (const word of hammingCodewords) {
+          const cost = costs[word ^ observed];
+          if (choices.length === 5 && cost >= choices[4].cost) continue;
+          // Keep only the five leading codewords. Equal scores keep input order.
+          const place = choices.findIndex(choice => choice.cost > cost);
+          if (place < 0) choices.push({ word, cost });
+          else choices.splice(place, 0, { word, cost });
+          if (choices.length > 5) choices.pop();
+        }
+        const [best, ...others] = choices;
+        const block = words.length;
+        words.push(best.word);
+        for (const choice of others) alternatives.push({ block, word: choice.word, cost: choice.cost - best.cost });
+      }
+
+      // Keep the closest legal codewords and require a unique checksum match.
+      alternatives.sort((a, b) => a.cost - b.cost);
+      let variants = [{ cost: 0, changes: [] }];
+      for (const choice of alternatives.slice(0, 30)) {
+        const added = variants.filter(variant => variant.changes.length < 3 &&
+          !variant.changes.some(change => change.block === choice.block)).map(variant => ({
+          cost: variant.cost + choice.cost, changes: [...variant.changes, choice],
+        }));
+        variants = variants.concat(added).sort((a, b) => a.cost - b.cost).slice(0, 128);
+      }
+      let match = null;
+      for (const { changes } of variants) {
+        const candidate = words.slice();
+        for (const { block, word } of changes) candidate[block] = word;
+        let header = 0;
+        for (const position of dataPositions.slice(0, 8)) {
+          header = (header << 1) | ((candidate[0] >> (position - 1)) & 1);
+        }
+        const layout = recordLayout(header);
+        if (!layout || Math.ceil(layout.bytes * 8 / 11) !== candidate.length) continue;
+        const record = unpackRecord(candidate);
+        if (!record) continue;
+        if (match && !matchesRecord(match, record)) return null;
+        match = record;
+      }
+      return match;
+    }
+
     function readLocalizedCardPayload({ data, width: imageWidth }, bounds, restored = false, weakerSignal = false) {
       const { width, height } = bounds;
       const ratio = width / height;
@@ -1665,14 +1720,14 @@
         if (!hasAmplitude || folded.length < edgeLength * 2 || !Number.isFinite(drop(edgeLength))) return null;
         const fit = preparePayloadFit(folded, origin, edgeLength, "card", response);
         const bits = fit(amplitude);
-        const record = readRecord(bits);
+        const record = recoverRecord(bits) || recoverSoftRecord(bits);
         if (record || !weakerSignal) return record;
         // If pilot amplitudes vary, try the lower center of their measured range.
         const lower = Math.floor(gains.length * 3 / 8);
         const lowAmplitude = (gains[lower - 1] + gains[lower]) / weightSum;
         if (!(lowAmplitude > 0)) return null;
         const conservative = fit(lowAmplitude);
-        return readRecord(conservative);
+        return recoverRecord(conservative) || recoverSoftRecord(conservative);
       }
       if (tall && !hasAmplitude) return null;
       let preferredFit;
@@ -1680,13 +1735,13 @@
         if (folded.length < size * 2) continue;
         const fit = preparePayloadFit(folded, origin, size, "card", response);
         const bits = fit(tall ? amplitude : 0.25);
-        const record = readRecord(bits);
+        const record = recoverRecord(bits) || (tall && size === edgeLength ? recoverSoftRecord(bits) : null);
         if (record) return record;
         if (!tall && size === edgeLength) preferredFit = fit;
       }
       if (!hasAmplitude || !preferredFit) return null;
       const bits = preferredFit(amplitude);
-      return readRecord(bits);
+      return recoverRecord(bits) || recoverSoftRecord(bits);
     }
 
     function readSmallCardPayload({ data, width: imageWidth }, bounds) {
@@ -1719,7 +1774,7 @@
           if (size + pilot.length > pairs.length || samples.length < size * 2) continue;
           const fit = preparePayloadFit(samples, origin, size);
           for (const amplitude of [0.18, 0.15]) {
-            const record = readRecord(fit(amplitude));
+            const record = recoverRecord(fit(amplitude));
             if (record) return record;
           }
         }
@@ -1825,6 +1880,7 @@
       // Observations at the same tile coordinate share the same fitted value.
       const folded = foldTileSamples(samples, "row");
       const attempted = new Set();
+      const repairs = [];
       const fitRow = (spectrum, alignment, amplitudes, limit) => {
         if (!alignment || alignment.score < 11) return null;
         for (const [size] of likelyPayloadLengths(spectrum, alignment, "row").slice(0, limit)) {
@@ -1836,8 +1892,10 @@
             attempted.add(key);
             fit ||= preparePayloadFit(folded, alignment, size, "row");
             const bits = fit(amplitude);
-            const record = readRecord(bits);
+            // Require a checksum match and reject repairs that make the signal fit worse.
+            const record = recoverRecord(bits, 0);
             if (record) return record;
+            if (restored && alignment.score >= 13.5) repairs.push(bits);
           }
         }
         return null;
@@ -1860,6 +1918,12 @@
       }).sort((a, b) => (b.alignment?.score ?? 0) - (a.alignment?.score ?? 0));
       for (const { spectrum, alignment } of alternatives) {
         const record = fitRow(spectrum, alignment, [0.23], 2);
+        if (record) return record;
+      }
+      // A strong pilot anchors the grid even when more than one block needs
+      // correction. Try the same bounded, checksum-checked decoder as cards.
+      for (const bits of repairs) {
+        const record = recoverSoftRecord(bits);
         if (record) return record;
       }
       return null;
@@ -2572,7 +2636,7 @@
           const gainsToTry = new Set([amplitude, gains[Math.floor(gains.length * 0.75)]]);
           for (const gain of gainsToTry) {
             const bits = fit(gain);
-            const record = readRecord(bits);
+            const record = recoverRecord(bits, 0) || recoverSoftRecord(bits);
             if (record) return record;
           }
         }
@@ -2581,12 +2645,12 @@
     }
 
 
-    function recoverCompressedWatermarks(imageData, found, report, resized) {
+    function recoverCompressedWatermarks(imageData, found, report) {
       const minimumScale = 0.22;
       const minimumHeight = Math.ceil(24 * 2 * minimumScale);
       const regions = coloredRegions(imageData, 2 * minimumScale, minimumHeight);
-      const rowCandidates = regions.filter(region => region.width >= imageData.width * 0.55 &&
-        region.width / region.height >= 5 && region.height <= 70 &&
+      const rowFrames = regions.filter(region => region.width >= imageData.width * 0.55 &&
+        region.width / region.height >= 5 && region.height <= nativeTileSizes.row[1] &&
         region.y + region.height < imageData.height);
       const cards = regions.filter(isCardFrame);
       const occupied = (frame, layout) => found.some(item => {
@@ -2595,12 +2659,6 @@
         return area >= 0.68 * frame.width * frame.height &&
           area >= 0.55 * item.region.width * item.region.height;
       });
-      // The initial row search uses a narrow height limit to keep registration
-      // fast. A taller unresolved row needs the broader, layout-based search.
-      const normalRowHeight = nativeTileSizes.row[1];
-      const needsTallerRows = resized && rowCandidates.some(frame =>
-        frame.height > normalRowHeight && !occupied(frame, "row"));
-      const rowFrames = needsTallerRows ? rowCandidates : rowCandidates.filter(frame => frame.height <= normalRowHeight);
       const rowsWithGaps = rowFrames.some((row, index) => {
         const next = rowFrames[index + 1];
         if (!next) return false;
@@ -2730,7 +2788,7 @@
         const found = decodeRegions(imageData, regions, seed, false, true, report);
         if (found.length || !singleCard) {
           recoverResizedCards(imageData, regions, found, report);
-          return recoverCompressedWatermarks(imageData, found, report, Math.abs(factor - 1) >= 0.002);
+          return recoverCompressedWatermarks(imageData, found, report);
         }
 
         if (Math.abs(factor - 1) < 0.002) return found;
@@ -2741,7 +2799,7 @@
           const record = readLocalizedCardPayload(restored, bounds, true);
           if (record) return [{ region: card, record, layout: "card" }];
         }
-        return recoverCompressedWatermarks(imageData, found, report, Math.abs(factor - 1) >= 0.002);
+        return recoverCompressedWatermarks(imageData, found, report);
       };
       if (Math.abs(factor - 1) < 0.002 ||
           width * height * factor * factor > 20000000) return readOriginal();
