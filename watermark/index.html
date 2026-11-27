@@ -1589,7 +1589,7 @@
       return word;
     });
 
-    function recoverSoftCard(bits) {
+    function recoverSoftRecord(bits) {
       const words = [];
       const alternatives = [];
       const costs = new Float64Array(1 << 15);
@@ -1601,8 +1601,16 @@
           if (strength >= 0) observed |= mask;
           for (let lower = 0; lower < mask; lower++) costs[mask | lower] = costs[lower] + Math.abs(strength);
         }
-        const choices = Array.from(hammingCodewords, word => ({ word, cost: costs[word ^ observed] }))
-          .sort((a, b) => a.cost - b.cost).slice(0, 5);
+        const choices = [];
+        for (const word of hammingCodewords) {
+          const cost = costs[word ^ observed];
+          if (choices.length === 5 && cost >= choices[4].cost) continue;
+          // Keep only the five leading codewords. Equal scores keep input order.
+          const place = choices.findIndex(choice => choice.cost > cost);
+          if (place < 0) choices.push({ word, cost });
+          else choices.splice(place, 0, { word, cost });
+          if (choices.length > 5) choices.pop();
+        }
         const [best, ...others] = choices;
         const block = words.length;
         words.push(best.word);
@@ -1712,7 +1720,7 @@
         if (!hasAmplitude || folded.length < edgeLength * 2 || !Number.isFinite(drop(edgeLength))) return null;
         const fit = preparePayloadFit(folded, origin, edgeLength, "card", response);
         const bits = fit(amplitude);
-        return recoverRecord(bits) || recoverSoftCard(bits);
+        return recoverRecord(bits) || recoverSoftRecord(bits);
       }
       if (tall && !hasAmplitude) return null;
       let preferredFit;
@@ -1720,13 +1728,13 @@
         if (folded.length < size * 2) continue;
         const fit = preparePayloadFit(folded, origin, size, "card", response);
         const bits = fit(tall ? amplitude : 0.25);
-        const record = recoverRecord(bits) || (tall && size === edgeLength ? recoverSoftCard(bits) : null);
+        const record = recoverRecord(bits) || (tall && size === edgeLength ? recoverSoftRecord(bits) : null);
         if (record) return record;
         if (!tall && size === edgeLength) preferredFit = fit;
       }
       if (!hasAmplitude || !preferredFit) return null;
       const bits = preferredFit(amplitude);
-      return recoverRecord(bits) || recoverSoftCard(bits);
+      return recoverRecord(bits) || recoverSoftRecord(bits);
     }
 
     function readSmallCardPayload({ data, width: imageWidth }, bounds) {
@@ -1846,6 +1854,7 @@
       // Observations at the same tile coordinate share the same fitted value.
       const folded = foldTileSamples(samples, "row");
       const attempted = new Set();
+      const repairs = [];
       const fitRow = (spectrum, alignment, amplitudes, limit) => {
         if (!alignment || alignment.score < 11) return null;
         for (const [size] of likelyPayloadLengths(spectrum, alignment, "row").slice(0, limit)) {
@@ -1860,6 +1869,7 @@
             // Require a checksum match and reject repairs that make the signal fit worse.
             const record = recoverRecord(bits, 0);
             if (record) return record;
+            if (restored && alignment.score >= 13.5) repairs.push(bits);
           }
         }
         return null;
@@ -1882,6 +1892,12 @@
       }).sort((a, b) => (b.alignment?.score ?? 0) - (a.alignment?.score ?? 0));
       for (const { spectrum, alignment } of alternatives) {
         const record = fitRow(spectrum, alignment, [0.23], 2);
+        if (record) return record;
+      }
+      // A strong pilot anchors the grid even when more than one block needs
+      // correction. Try the same bounded, checksum-checked decoder as cards.
+      for (const bits of repairs) {
+        const record = recoverSoftRecord(bits);
         if (record) return record;
       }
       return null;
@@ -2154,6 +2170,34 @@
 
     const rankGridAdjustments = [-0.0005, 0.0005, -0.001, 0.001, -0.0015, 0.0015];
 
+    function* neighboringRankGrids(imageData, normalized, scale, correctAxes = false) {
+      const { width, height } = imageData;
+      const attempted = new Set([normalized.width + "," + normalized.height]);
+      const markSize = (w, h) => {
+        const key = w + "," + h;
+        if (attempted.has(key)) return false;
+        attempted.add(key);
+        return true;
+      };
+      for (const delta of rankGridAdjustments) {
+        const factor = nativeTileScale / (scale + delta);
+        if (markSize(Math.round(width * factor), Math.round(height * factor))) {
+          yield resizeForReading(imageData, factor);
+        }
+      }
+      if (!correctAxes) return;
+
+      // Even an isotropic resize rounds each axis independently. A shared scale
+      // can skip a nearby grid that differs by one pixel in only one direction.
+      for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        const w = normalized.width + dx;
+        const h = normalized.height + dy;
+        if (markSize(w, h)) {
+          yield resizeForReading(imageData, 1, 0, false, { x: 0, y: 0, stepX: width / w, stepY: height / h });
+        }
+      }
+    }
+
     function readRankGridFirst(imageData, normalized, regions, scale, report) {
       const rankRows = list => list.filter(region => region.width / region.height > 4 &&
         region.width >= 360 && region.width <= 1000 && region.height >= 24 && region.height <= 70);
@@ -2186,13 +2230,7 @@
       };
       let score = confidence(normalized, firstRows) + 0.04;
       let best = null;
-      const tried = new Set([normalized.width + "," + normalized.height]);
-      for (const delta of rankGridAdjustments) {
-        const factor = nativeTileScale / (scale + delta);
-        const dims = Math.round(imageData.width * factor) + "," + Math.round(imageData.height * factor);
-        if (tried.has(dims)) continue;
-        tried.add(dims);
-        const image = resizeForReading(imageData, factor);
+      for (const image of neighboringRankGrids(imageData, normalized, scale)) {
         const rows = rankRows(coloredRegions(image));
         if (rows.length < Math.ceil(firstRows.length * 0.65)) continue;
         const candidate = confidence(image, rows);
@@ -2314,13 +2352,7 @@
       if (ranking.length && expectedRows.length >= 4 && normalized.width * normalized.height <= 4000000 &&
           expectedRows.some(row => !isCovered(row))) {
         report("retryRows");
-        const tried = new Set([normalized.width + "," + normalized.height]);
-        for (const delta of rankGridAdjustments) {
-          const adjustment = nativeTileScale / (scale + delta);
-          const dimensions = Math.round(width * adjustment) + "," + Math.round(height * adjustment);
-          if (tried.has(dimensions)) continue;
-          tried.add(dimensions);
-          const resized = resizeForReading(imageData, adjustment);
+        for (const resized of neighboringRankGrids(imageData, normalized, scale, true)) {
           const candidates = coloredRegions(resized).filter(region => {
             if (region.width / region.height < 4) return false;
             const frame = intoOriginal(region, resized);
