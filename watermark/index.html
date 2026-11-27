@@ -293,6 +293,7 @@
     #records tbody + tbody .record-group-heading th { padding-top: .7rem; }
     #records tbody[data-layout="card"] .record-group-heading th { color: var(--card-marker); }
     .record-group-count { margin-inline-start: .44rem; color: var(--muted); font-size: .75rem; font-weight: 560; }
+    .correction-icon { margin-inline-start: .35em; color: var(--muted); cursor: help; }
     .region-column { width: 1%; }
     .streamer { font-weight: 660; overflow-wrap: anywhere; }
     #records .duration { width: 1%; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -423,7 +424,7 @@
         [parts.hour, parts.minute, parts.second].join(":") + " (KST)";
     }
 
-    function unpackRecord(words) {
+    function unpackRecord(words, observedWords) {
       const bytes = new Uint8Array(Math.floor(words.length * 11 / 8));
       let bit = 0;
       for (const word of words) {
@@ -460,6 +461,7 @@
         formatCaptureTime(epoch + new DataView(bytes.buffer).getUint32(start + 5) * 1000);
       return {
         streamer,
+        corrected: words.slice(0, Math.ceil(end * 8 / 11)).some((word, i) => word !== observedWords[i]),
         watchSeconds,
         extensionVersion: [version >> 8, (version >> 4) & 0x0f, version & 0x0f].join("."),
         captureDate,
@@ -483,7 +485,7 @@
         parity.push(syndrome);
         corrected.push(syndrome ? word ^ (1 << (syndrome - 1)) : word);
       }
-      const direct = unpackRecord(corrected);
+      const direct = unpackRecord(corrected, words);
       if (direct) return direct;
 
       let header = 0;
@@ -512,7 +514,7 @@
         if (choice.cost > maxRepairCost) break;
         const trial = corrected.slice();
         trial[choice.block] = choice.word;
-        const result = unpackRecord(trial);
+        const result = unpackRecord(trial, words);
         if (result) return result;
       }
       const nearest = alternatives.slice(0, 7);
@@ -524,7 +526,7 @@
           const trial = corrected.slice();
           trial[a.block] = a.word;
           trial[b.block] = b.word;
-          const result = unpackRecord(trial);
+          const result = unpackRecord(trial, words);
           if (result) return result;
         }
       }
@@ -1590,6 +1592,7 @@
     });
 
     function recoverSoftRecord(bits) {
+      const observedWords = [];
       const words = [];
       const alternatives = [];
       const costs = new Float64Array(1 << 15);
@@ -1601,6 +1604,7 @@
           if (strength >= 0) observed |= mask;
           for (let lower = 0; lower < mask; lower++) costs[mask | lower] = costs[lower] + Math.abs(strength);
         }
+        observedWords.push(observed);
         const choices = [];
         for (const word of hammingCodewords) {
           const cost = costs[word ^ observed];
@@ -1637,7 +1641,7 @@
         }
         const layout = recordLayout(header);
         if (!layout || Math.ceil(layout.bytes * 8 / 11) !== candidate.length) continue;
-        const record = unpackRecord(candidate);
+        const record = unpackRecord(candidate, observedWords);
         if (!record) continue;
         if (match && !matchesRecord(match, record)) return null;
         match = record;
@@ -3239,6 +3243,15 @@
             const streamer = row.insertCell();
             streamer.className = "streamer";
             streamer.textContent = record.streamer;
+            if (record.corrected) {
+              const icon = document.createElement("span");
+              icon.className = "correction-icon";
+              icon.setAttribute("role", "img");
+              icon.title = "보정된 데이터 · 워터마크를 읽는 과정에서 오류를 정정하고 체크섬을 확인했습니다.";
+              icon.setAttribute("aria-label", icon.title);
+              icon.textContent = "⟳";
+              streamer.append(icon);
+            }
             const duration = row.insertCell();
             duration.className = "duration";
             duration.textContent = formatTime(record.watchSeconds);
