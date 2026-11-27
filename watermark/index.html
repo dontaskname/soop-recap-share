@@ -461,6 +461,7 @@
         formatCaptureTime(epoch + new DataView(bytes.buffer).getUint32(start + 5) * 1000);
       return {
         streamer,
+        metadataBytes: bytes.slice(start + 3, end - 2),
         corrected: words.slice(0, Math.ceil(end * 8 / 11)).some((word, i) => word !== observedWords[i]),
         watchSeconds,
         extensionVersion: [version >> 8, (version >> 4) & 0x0f, version & 0x0f].join("."),
@@ -1591,7 +1592,8 @@
       return word;
     });
 
-    function recoverSoftRecord(bits) {
+    function recoverSoftRecord(bits, hint) {
+      let metadataStart;
       const observedWords = [];
       const words = [];
       const alternatives = [];
@@ -1614,6 +1616,27 @@
           if (place < 0) choices.push({ word, cost });
           else choices.splice(place, 0, { word, cost });
           if (choices.length > 5) choices.pop();
+        }
+        if (hint && start === 0) {
+          let header = 0;
+          for (const pos of dataPositions.slice(0, 8)) header = (header << 1) | ((choices[0].word >> (pos - 1)) & 1);
+          const layout = recordLayout(header);
+          if (!layout || Math.ceil(layout.bytes * 8 / 11) * 15 !== bits.length ||
+              hint.metadataBytes.length !== (layout.legacyDate ? 4 : 6)) return null;
+          metadataStart = (layout.nicknameLength + 4) * 8;
+        }
+        if (hint) {
+          let mask = 0, expected = 0;
+          for (const [i, pos] of dataPositions.entries()) {
+            const bit = start / 15 * 11 + i - metadataStart;
+            if (bit < 0 || bit >= hint.metadataBytes.length * 8) continue;
+            mask |= 1 << (pos - 1);
+            if (hint.metadataBytes[bit >> 3] & (128 >> (bit % 8))) expected |= 1 << (pos - 1);
+          }
+          for (let i = choices.length - 1; i >= 0; i--) {
+            if ((choices[i].word & mask) !== expected) choices.splice(i, 1);
+          }
+          if (!choices.length) return null;
         }
         const [best, ...others] = choices;
         const block = words.length;
@@ -1642,7 +1665,7 @@
         const layout = recordLayout(header);
         if (!layout || Math.ceil(layout.bytes * 8 / 11) !== candidate.length) continue;
         const record = unpackRecord(candidate, observedWords);
-        if (!record) continue;
+        if (!record || (hint && (record.extensionVersion !== hint.extensionVersion || record.captureDate !== hint.captureDate))) continue;
         if (match && !matchesRecord(match, record)) return null;
         match = record;
       }
@@ -2603,7 +2626,7 @@
       }};
     }
 
-    function readResizedWatermark(image, grid, region, layout) {
+    function readResizedWatermark(image, grid, region, layout, failed) {
       const observation = sampleResizedWatermark(image, grid, region, layout);
       const { samples, scaleX, scaleY } = observation;
       const { pairs, phaseTurns } = watermarkModels[layout];
@@ -2642,6 +2665,7 @@
             const bits = fit(gain);
             const record = recoverRecord(bits, 0) || recoverSoftRecord(bits);
             if (record) return record;
+            if (failed && failed.length < 12) failed.push(bits);
           }
         }
       }
@@ -2650,6 +2674,7 @@
 
 
     function recoverCompressedWatermarks(imageData, found, report) {
+      const pending = new Map();
       const minimumScale = 0.22;
       const minimumHeight = Math.ceil(24 * 2 * minimumScale);
       const regions = coloredRegions(imageData, 2 * minimumScale, minimumHeight);
@@ -2729,8 +2754,14 @@
             const bounds = row ? region : refineCardBounds(raster, region);
             const record = row ? readSmallRankRow(raster, region, true, true) :
               readLocalizedCardPayload(raster, bounds, true, true);
-            const recovered = record || readResizedWatermark(imageData, raster, bounds, layout) ||
-              (!row ? readResizedWatermark(imageData, raster, region, layout) : null);
+            const anchor = frames.find(other => overlapArea(frame, other) >= 0.68 * other.width * other.height);
+            let retry = pending.get(anchor);
+            if (anchor && !retry && pending.size < 128) {
+              retry = { frame, layout, bits: [] };
+              pending.set(anchor, retry);
+            }
+            const recovered = record || readResizedWatermark(imageData, raster, bounds, layout, retry?.bits) ||
+              (!row ? readResizedWatermark(imageData, raster, region, layout, retry?.bits) : null);
             if (!recovered) continue;
             if (found.some(item => item.layout === layout && matchesRecord(item.record, recovered) &&
                 overlapArea(frame, item.region) >= 0.5 * Math.min(frame.width * frame.height,
@@ -2743,6 +2774,22 @@
       };
       if (retryRows) recover(rowFrames, "row");
       if (retryCards) recover(cards, "card");
+      const anchors = found.filter(item => !item.record.corrected);
+      const hint = anchors[0]?.record;
+      if (hint && anchors.some(item => !overlapArea(item.region, anchors[0].region)) &&
+          found.every(({ record }) => record.extensionVersion === hint.extensionVersion && record.captureDate === hint.captureDate)) {
+        for (const { frame, layout, bits } of pending.values()) {
+          if (occupied(frame, layout)) continue;
+          let match;
+          for (const observation of bits) {
+            const record = recoverSoftRecord(observation, hint);
+            if (!record) continue;
+            if (match && !matchesRecord(match, record)) { match = null; break; }
+            match = record;
+          }
+          if (match) found.push({ region: frame, layout, record: match });
+        }
+      }
       return found.sort((a, b) =>
         Math.abs(a.region.y - b.region.y) < 10 ? a.region.x - b.region.x : a.region.y - b.region.y);
     }
