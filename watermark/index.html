@@ -885,7 +885,7 @@
       return data[pixel + 3] >= 128 && Math.max(red, green, blue) - Math.min(red, green, blue) >= 13;
     }
 
-    function coloredRegions({ data, width, height }) {
+    function coloredRegions({ data, width, height }, cardScale = 1) {
       const step = colorSampleStep(width, height);
       const gridWidth = Math.ceil(width / step);
       const gridHeight = Math.ceil(height / step);
@@ -931,7 +931,7 @@
           regions.push({ x: left * step, y: top * step, width: w, height: h });
         }
       }
-      const cards = regions.filter(region => region.width >= 120 && region.height >= 86 &&
+      const cards = regions.filter(region => region.width >= 120 * cardScale && region.height >= 86 * cardScale &&
         region.width / region.height < 4);
       const rowParts = regions.filter(region => region.height <= 96 && !cards.includes(region));
       const rowAnchors = rowParts.filter(region => region.width >= region.height * 0.6);
@@ -1645,7 +1645,7 @@
       return match;
     }
 
-    function readLocalizedCardPayload({ data, width: imageWidth }, bounds, restored = false) {
+    function readLocalizedCardPayload({ data, width: imageWidth }, bounds, restored = false, weakerSignal = false) {
       const { width, height } = bounds;
       const ratio = width / height;
       const tall = isTallCard(width, height);
@@ -1720,7 +1720,14 @@
         if (!hasAmplitude || folded.length < edgeLength * 2 || !Number.isFinite(drop(edgeLength))) return null;
         const fit = preparePayloadFit(folded, origin, edgeLength, "card", response);
         const bits = fit(amplitude);
-        return recoverRecord(bits) || recoverSoftRecord(bits);
+        const record = recoverRecord(bits) || recoverSoftRecord(bits);
+        if (record || !weakerSignal) return record;
+        // If pilot amplitudes vary, try the lower center of their measured range.
+        const lower = Math.floor(gains.length * 3 / 8);
+        const lowAmplitude = (gains[lower - 1] + gains[lower]) / weightSum;
+        if (!(lowAmplitude > 0)) return null;
+        const conservative = fit(lowAmplitude);
+        return recoverRecord(conservative) || recoverSoftRecord(conservative);
       }
       if (tall && !hasAmplitude) return null;
       let preferredFit;
@@ -2311,6 +2318,160 @@
       }));
     }
 
+    const minimumCardGridScale = 0.275;
+
+    function measureCardGrids(imageData, frames) {
+      const { width, height, data } = imageData;
+      const increment = 0.0025;
+      const anchors = [...frames].sort((a, b) => b.width * b.height - a.width * a.height)
+        .slice(0, 4).map(region => {
+          const { x, y, width: frameWidth, height: frameHeight } = region;
+          const { chroma, texture } = regionChroma(data, width, region, "green");
+          const weights = Float32Array.from(texture, spread => 1 / (1 + (spread / 24) ** 2));
+          const energy = spectrum(chroma, frameWidth, frameHeight, 0.1, 3.5, 0.1, weights,
+            "card", minimumCardGridScale, smallCardBackground);
+          return { x, y, energy };
+        });
+      if (!anchors.length) return [];
+
+      const { pairs } = watermarkModels.card;
+      const averageStrongest = votes => {
+        const sample = votes.sort((a, b) => b - a).slice(0, Math.ceil(anchors.length * 0.75));
+        return sample.reduce((sum, value) => sum + value, 0) / sample.length;
+      };
+      const inBand = ([fx, fy], scaleX, scaleY) =>
+        Math.abs(fx / scaleX) < 0.5 && Math.abs(fy / scaleY) < 0.5;
+      const contrast = (energy, scaleX, scaleY) => {
+        let total = 0;
+        let count = 0;
+        for (const [index, sign] of pilot.entries()) {
+          const [left, right] = pairs[index];
+          if (!inBand(left, scaleX, scaleY) || !inBand(right, scaleX, scaleY)) continue;
+          const a = energy(left[0], left[1] * scaleX / scaleY, scaleX);
+          const b = energy(right[0], right[1] * scaleX / scaleY, scaleX);
+          total += sign * (b - a) / Math.max(a + b, 1e-9);
+          count++;
+        }
+        return total / Math.max(count, 1);
+      };
+
+      const bins = Array.from({ length: 121 }, (_, index) => {
+        const scale = minimumCardGridScale + increment * index;
+        return { scale, score: averageStrongest(anchors.map(({ energy }) => contrast(energy, scale, scale))) };
+      });
+      const peaks = bins.filter((bin, index) => bin.score >= (bins[index - 1]?.score ?? -1) &&
+        bin.score >= (bins[index + 1]?.score ?? -1));
+      peaks.sort((a, b) => b.score - a.score);
+
+      const grids = [];
+      const checked = new Set();
+      for (const { scale } of peaks.slice(0, 4)) {
+        if (scale <= minimumCardGridScale) continue;
+        const step = 2 * scale;
+        const centerWidth = Math.round(width / step);
+        const centerHeight = Math.round(height / step);
+        // Convert neighboring frequency bins to pixel uncertainty on each axis.
+        const columns = Math.ceil(width * (2 * increment) / step ** 2) + 1;
+        const rows = Math.ceil(height * (2 * increment) / step ** 2) + 1;
+        for (let dx = -columns; dx <= columns; dx++) {
+          for (let dy = -rows; dy <= rows; dy++) {
+            const gridWidth = centerWidth + dx;
+            const gridHeight = centerHeight + dy;
+            const key = gridWidth + "," + gridHeight;
+            if (checked.has(key)) continue;
+            checked.add(key);
+            const scaleX = width / (2 * gridWidth);
+            const scaleY = height / (2 * gridHeight);
+            if (Math.min(scaleX, scaleY) < minimumCardGridScale || gridWidth * gridHeight > 4000000) continue;
+            const pilotCount = pilot.filter((sign, index) =>
+              inBand(pairs[index][Number(sign > 0)], scaleX, scaleY)).length;
+            if (!pilotCount) continue;
+
+            const votes = anchors.map(({ x, y, energy }) => {
+              const anchorX = (x + 0.5) / (2 * scaleX) - 0.5;
+              const anchorY = (y + 0.5) / (2 * scaleY) - 0.5;
+              const fractionX = anchorX - Math.round(anchorX);
+              const fractionY = anchorY - Math.round(anchorY);
+              // The FFT starts at a cropped pixel. Undo the fractional offset
+              // before comparing the pilot with the restored integer grid.
+              const aligned = { complex(fx, fy) {
+                if (!inBand([fx, fy], scaleX, scaleY)) return [0, 0];
+                const [re, im] = energy.complex(fx, fy * scaleX / scaleY, scaleX);
+                const angle = -4 * Math.PI * (fx * fractionX + fy * fractionY);
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                return [re * cos - im * sin, re * sin + im * cos];
+              }};
+              const [origin] = findTileOrigins(aligned, scaleX);
+              return (origin?.score ?? 0) / pilotCount - 0.5 + contrast(energy, scaleX, scaleY);
+            });
+            grids.push({ width: gridWidth, height: gridHeight, score: averageStrongest(votes) });
+          }
+        }
+      }
+      return grids.sort((a, b) => b.score - a.score);
+    }
+
+    function isCardFrame(region) {
+      const aspect = region.width / region.height;
+      return aspect >= 0.65 && aspect <= 2.4;
+    }
+
+    function recoverResizedCards(imageData, regions, found, report) {
+      if (!regions.some(isCardFrame)) return found;
+      const cards = found.filter(item => item.layout === "card");
+      const covered = frame => cards.some(item =>
+        overlapArea(frame, item.region) >= 0.7 * frame.width * frame.height);
+      if (cards.length >= 4 && regions.filter(isCardFrame).every(covered)) return found;
+      // Include card frames that are smaller than the normal color sampler's limits.
+      const frames = coloredRegions(imageData, 2 * minimumCardGridScale).filter(isCardFrame);
+      if (frames.length < 2 || frames.every(covered)) return found;
+      report("retryCards");
+      const grids = measureCardGrids(imageData, frames);
+      const distinct = [];
+      for (const grid of grids) {
+        // Keep distinct grid peaks ahead of near-identical rounding hypotheses.
+        if (distinct.some(other =>
+          Math.abs(other.width - grid.width) <= 3 && Math.abs(other.height - grid.height) <= 2)) continue;
+        distinct.push(grid);
+        if (distinct.length === 4) break;
+      }
+      const trials = [...new Set([...distinct, ...grids.slice(0, 4)])];
+      for (const { width, height } of trials) {
+        const stepX = imageData.width / width;
+        const stepY = imageData.height / height;
+        const raster = resizeForReading(imageData, 1, 0, true, { x: 0, y: 0, stepX, stepY });
+        const project = region => ({
+          x: region.x * stepX, y: region.y * stepY,
+          width: region.width * stepX, height: region.height * stepY,
+        });
+        const unresolved = region => {
+          const frame = project(region);
+          return !covered(frame) && frames.some(other =>
+            overlapArea(frame, other) >= 0.65 * other.width * other.height);
+        };
+        const candidates = coloredRegions(raster).filter(region => isCardFrame(region) && unresolved(region));
+        if (!candidates.length) continue;
+        const precise = [];
+        for (const region of candidates) {
+          if (!isTallCard(region.width, region.height)) continue;
+          const refined = refineCardBounds(raster, region);
+          const record = readLocalizedCardPayload(raster, refined, true, true) ||
+            readLocalizedCardPayload(raster, region, true, true);
+          if (record) precise.push({ region: refined, record, layout: "card" });
+        }
+        for (const item of decodeRegions(raster, candidates, precise, true, false)) {
+          if (!unresolved(item.region)) continue;
+          const match = { ...item, region: project(item.region) };
+          cards.push(match);
+          found.push(match);
+        }
+        if (frames.every(covered)) break;
+      }
+      return found.sort((a, b) =>
+        Math.abs(a.region.y - b.region.y) < 10 ? a.region.x - b.region.x : a.region.y - b.region.y);
+    }
+
     function decodeImage(imageData, onProgress) {
       let reportedStage;
       let reportedCount = false;
@@ -2353,7 +2514,7 @@
       const factor = nativeTileScale / scale;
       const readOriginal = (seed = []) => {
         const found = decodeRegions(imageData, regions, seed, false, true, report);
-        if (found.length || !singleCard) return found;
+        if (found.length || !singleCard) return recoverResizedCards(imageData, regions, found, report);
 
         if (Math.abs(factor - 1) < 0.002) return found;
         report("retryCards");
