@@ -1151,6 +1151,10 @@
       return width >= 120 && width <= 280 && height >= 86 && height <= 210;
     }
 
+    function isTallCard(width, height) {
+      return width >= 120 && width <= 280 && height <= 370 && width / height >= 0.65 && width < height;
+    }
+
     function refineCardBounds({ data, width, height }, region) {
       const { x, y, width: cardWidth, height: cardHeight } = region;
       const step = colorSampleStep(width, height);
@@ -1585,7 +1589,7 @@
       return word;
     });
 
-    function recoverResampledCard(bits) {
+    function recoverSoftCard(bits) {
       const words = [];
       const alternatives = [];
       const costs = new Float64Array(1 << 15);
@@ -1636,7 +1640,7 @@
     function readLocalizedCardPayload({ data, width: imageWidth }, bounds, restored = false) {
       const { width, height } = bounds;
       const ratio = width / height;
-      const tall = restored && ratio >= 0.65 && ratio < 1 && width >= 120 && width <= 280 && height <= 370;
+      const tall = isTallCard(width, height);
       if (!tall && (!isCompactCard(width, height) || ratio < 1.15 || ratio > 1.8)) return null;
       const { chroma, texture } = regionChroma(data, imageWidth, bounds, "green");
       const background = blur(chroma, width, height, smallCardBackground);
@@ -1671,16 +1675,16 @@
 
       // After the last encoded block, neither carrier in a pair is transmitted.
       const { pairs, phaseTurns } = watermarkModels.card;
+      const project = (index, symbol) => {
+        const [fx, fy] = pairs[index][symbol];
+        const [re, im] = energy.complex(fx, fy, nativeTileScale);
+        const angle = 2 * Math.PI * (phaseTurns[index] + 2 * (fx * origin.x + fy * origin.y));
+        return re * Math.cos(angle) + im * Math.sin(angle);
+      };
       const blocks = [];
       for (let i = pilot.length; i + 15 <= pairs.length; i += 15) {
         let strength = 0;
-        for (let j = i; j < i + 15; j++) {
-          for (const [fx, fy] of pairs[j]) {
-            const [re, im] = energy.complex(fx, fy, nativeTileScale);
-            const angle = 2 * Math.PI * (phaseTurns[j] + 2 * (fx * origin.x + fy * origin.y));
-            strength += re * Math.cos(angle) + im * Math.sin(angle);
-          }
-        }
+        for (let j = i; j < i + 15; j++) strength += project(j, 0) + project(j, 1);
         blocks.push(strength / 15);
       }
       const lengths = likelyPayloadLengths(energy, origin);
@@ -1694,15 +1698,35 @@
       if (restored) {
         if (folded.length < edgeLength * 2 || !Number.isFinite(drop(edgeLength))) return null;
         const fit = preparePayloadFit(folded, origin, edgeLength, "card", resampledCardCarrierResponse);
-        return recoverResampledCard(fit(0.255));
+        return recoverSoftCard(fit(0.255));
       }
+
+      // The known pilot tones measure the signal left after the localized masks,
+      // background subtraction and texture weighting. Median paired differences
+      // suppress neighboring payload leakage and strong artwork edges.
+      const response = compactCardCarrierResponse;
+      const weightSum = folded.reduce((total, sample) => total + sample.weight, 0);
+      const gains = pilot.map((sign, i) => {
+        const active = Number(sign > 0);
+        const inactive = 1 - active;
+        return project(i, active) / response[i][active] - project(i, inactive) / response[i][inactive];
+      }).sort((a, b) => a - b);
+      const middle = gains.length / 2;
+      const amplitude = (gains[middle - 1] + gains[middle]) / weightSum;
+      const hasAmplitude = amplitude > 0 && Number.isFinite(amplitude);
+      if (tall && !hasAmplitude) return null;
+      let preferredFit;
       for (const size of new Set([edgeLength, ...lengths.slice(0, 2).map(([length]) => length)])) {
         if (folded.length < size * 2) continue;
-        const fit = preparePayloadFit(folded, origin, size, "card", compactCardCarrierResponse);
-        const record = recoverRecord(fit(0.25));
+        const fit = preparePayloadFit(folded, origin, size, "card", response);
+        const bits = fit(tall ? amplitude : 0.25);
+        const record = recoverRecord(bits) || (tall && size === edgeLength ? recoverSoftCard(bits) : null);
         if (record) return record;
+        if (!tall && size === edgeLength) preferredFit = fit;
       }
-      return null;
+      if (!hasAmplitude || !preferredFit) return null;
+      const bits = preferredFit(amplitude);
+      return recoverRecord(bits) || recoverSoftCard(bits);
     }
 
     function readSmallCardPayload({ data, width: imageWidth }, bounds) {
@@ -2258,9 +2282,7 @@
         region: intoOriginal(region, normalized), record, layout,
       }));
       const uncoveredCard = (region, source) => {
-        const ratio = region.width / region.height;
-        const tall = ratio >= 0.65 && ratio < 1 && region.width >= 120 && region.width <= 280 && region.height <= 370;
-        if (!isCompactCard(region.width, region.height) && !tall) return false;
+        if (!isCompactCard(region.width, region.height) && !isTallCard(region.width, region.height)) return false;
         const mapped = intoOriginal(region, source);
         const area = mapped.width * mapped.height;
         return !seed.some(item => overlapArea(mapped, item.region) >= area * 0.72);
@@ -2335,8 +2357,7 @@
         const widthAtNative = region.width * factor;
         const heightAtNative = region.height * factor;
         const compact = ratio >= 1.15 && ratio <= 1.8 && isCompactCard(widthAtNative, heightAtNative);
-        const tall = ratio >= 0.65 && ratio < 1 && widthAtNative >= 120 && widthAtNative <= 280 && heightAtNative <= 370;
-        return region.width >= 100 && (compact || tall) && !isCovered(region);
+        return region.width >= 100 && (compact || isTallCard(widthAtNative, heightAtNative)) && !isCovered(region);
       });
       if (remaining.length) report("retryCards");
       for (const region of remaining.slice(0, 4)) {
@@ -2411,11 +2432,14 @@
         const bounds = refined || refineCardBounds(imageData, region);
         const lowContrast = readLowContrastCard(imageData, bounds);
         if (lowContrast) return { region: bounds, record: lowContrast, layout };
-        if (!isCompactCard(sampleWidth, sampleHeight)) return null;
-        const recovered = readCompactChroma(imageData, bounds, { inset: 8, edgeThreshold: 8 }) ||
-          readCompactChroma(imageData, bounds, { inset: 0, native: true }) ||
-          (!refined ? readCompactCardQuick(imageData, bounds) : null);
-        if (recovered) return { region: bounds, record: recovered, layout };
+        if (isCompactCard(sampleWidth, sampleHeight)) {
+          const recovered = readCompactChroma(imageData, bounds, { inset: 8, edgeThreshold: 8 }) ||
+            readCompactChroma(imageData, bounds, { inset: 0, native: true }) ||
+            (!refined ? readCompactCardQuick(imageData, bounds) : null);
+          if (recovered) return { region: bounds, record: recovered, layout };
+        } else if (!isTallCard(bounds.width, bounds.height)) {
+          return null;
+        }
 
         // Retain the full card when a coarse color sample rounds an edge inward.
         const x = Math.min(region.x, bounds.x);
