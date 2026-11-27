@@ -2709,6 +2709,7 @@
       shared.replaceChildren();
       Array.from(records.tBodies).forEach(body => body.remove());
       regions.querySelectorAll(".region").forEach(region => region.remove());
+      const analysisFailure = "이미지를 분석하지 못했어요. 이미지 해상도가 낮거나 분석에 필요한 정보를 읽을 수 없을 때 이런 문제가 발생할 수 있어요.";
       let bitmap;
       try {
         bitmap = await createImageBitmap(file);
@@ -2727,11 +2728,11 @@
         showResults(found);
         review.hidden = false;
         setStatus(found.length ?
-          found.length + "개 영역의 워터마크를 읽었습니다." : "이 이미지에서 워터마크를 읽을 수 없습니다.",
+          found.length + "개 영역의 워터마크를 읽었습니다." : analysisFailure,
           Boolean(found.length));
       } catch {
         if (!read.signal.aborted) {
-          setStatus(bitmap ? "이미지 처리 중 문제가 생겼습니다." : "이 이미지 파일을 열 수 없습니다.");
+          setStatus(bitmap ? analysisFailure : "이 이미지 파일을 열 수 없습니다.");
         }
       } finally {
         bitmap?.close();
